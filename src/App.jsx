@@ -219,28 +219,43 @@ export default function App() {
   };
 
   const handleUpdateDirection = async (newDirection) => {
-    if (!currentBus) return;
-    const defaultStageId = newDirection.startsWith("Valley Road") ? 1 : 7;
+  if (!currentBus) return;
 
-    const { error } = await supabase
-      .from('buses')
-      .update({ 
-        direction: newDirection,
-        current_stage_id: defaultStageId,
-        is_full: false
-      })
-      .eq('id', currentBus.id);
+  // Determine default starting stage relative to direction
+  const defaultStageId = newDirection.startsWith("Valley Road") ? 1 : 18; // 18 is Main Campus
 
-    if (error) {
-      console.error("Error updating direction:", error);
-      return;
-    }
+  // Clear old passenger wait lists for this direction (Mark as expired)
+  const { error: waitListError } = await supabase
+    .from('wait_list')
+    .update({ status: 'expired' })
+    .eq('direction', currentBus.direction)
+    .eq('status', 'waiting');
 
-    const clearUpdates = stages.map(stage => {
-      return supabase.from('stages').update({ time_passed: null }).eq('id', stage.id);
-    });
-    await Promise.all(clearUpdates);
-  };
+  if (waitListError) {
+    console.error("Error archiving wait list:", waitListError);
+  }
+
+  // Update the direction and reset the bus to the starting stage
+  const { error: busError } = await supabase
+    .from('buses')
+    .update({ 
+      direction: newDirection,
+      current_stage_id: defaultStageId,
+      is_full: false
+    })
+    .eq('id', currentBus.id);
+
+  if (busError) {
+    console.error("Error updating direction:", busError);
+    return;
+  }
+
+  // Reset passing timestamps in the stages table
+  const clearUpdates = stages.map(stage => {
+    return supabase.from('stages').update({ time_passed: null }).eq('id', stage.id);
+  });
+  await Promise.all(clearUpdates);
+};
 
   const handleToggleActive = async () => {
     if (!currentBus) return;
