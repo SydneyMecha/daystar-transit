@@ -9,7 +9,7 @@ export default function App() {
   const [waitCounts, setWaitCounts] = useState({});
   
   // App Navigation & Roles
-  const [activeTab, setActiveTab] = useState("tracker"); // "tracker" or "schedule"
+  const [activeTab, setActiveTab] = useState("tracker");
   const [isCoordinator, setIsCoordinator] = useState(false);
 
   // Student interaction states
@@ -222,7 +222,7 @@ export default function App() {
   if (!currentBus) return;
 
   // Determine default starting stage relative to direction
-  const defaultStageId = newDirection.startsWith("Valley Road") ? 1 : 18; // 18 is Main Campus
+  const defaultStageId = newDirection.startsWith("Valley Road") ? 1 : 18;
 
   // Clear old passenger wait lists for this direction (Mark as expired)
   const { error: waitListError } = await supabase
@@ -304,8 +304,25 @@ export default function App() {
       
       {/* Role Toggle Header Indicator */}
       <div className="text-center mb-3">
-        <span className="text-[10px] uppercase tracking-wider font-bold text-gray-400 bg-gray-200/50 px-3 py-1 rounded-full">
-          {isCoordinator ? "🛠️ Coordinator Mode" : "🎓 Passenger Mode"}
+        <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500 bg-gray-200/50 px-3 py-1 rounded-full flex items-center justify-center gap-1.5 w-max mx-auto">
+          {isCoordinator ? (
+            <>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Coordinator Mode
+            </>
+          ) : (
+            <>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path d="M12 14l9-5-9-5-9 5 9 5z" />
+                <path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
+              </svg>
+              Passenger Mode
+            </>
+          )}
         </span>
       </div>
 
@@ -330,7 +347,10 @@ export default function App() {
               : "text-gray-500 hover:text-gray-700"
           }`}
         >
-          <span>📅</span> Bus Schedule
+          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          Bus Schedule
         </button>
       </div>
 
@@ -340,9 +360,12 @@ export default function App() {
           {visibleBuses.length === 0 ? (
             /* EMPTY STATE FALLBACK (If no buses are online) */
             <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
-              <div className="text-5xl mb-4">🚌</div>
+              <svg className="w-16 h-16 text-gray-400 mb-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 16c0 1.105-1.343 2-3 2H8c-1.657 0-3-.895-3-2V8c0-1.105 1.343-2 3-2h8c1.657 0 3 .895 3 2v8z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M5 10h14M7 14h2m6 0h2M9 18a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
               <h3 className="font-bold text-gray-700 text-lg mb-2">No Buses in Transit</h3>
-              <p className="text-sm text-gray-400 leading-relaxed max-w-[280px]">
+              <p className="text-sm text-gray-400 leading-relaxed max-w-70">
                 There are currently no active buses reported on the road. Please switch to the <strong>Bus Schedule</strong> tab to check normal departure times.
               </p>
             </div>
@@ -352,9 +375,7 @@ export default function App() {
               {/* 1. Header Card (With Swipe Chevrons) */}
               <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50 mb-4 relative">
                 <div className="flex items-center justify-center gap-2 text-gray-600 font-medium text-sm mb-3">
-                  <svg className="w-4 h-4 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                  </svg>
+                  <img src="/logo.png" alt="Daystar Transit Logo" className="w-8 h-8 object-contain" />
                   School Bus System
                 </div>
                 
@@ -388,7 +409,10 @@ export default function App() {
                 </div>
 
                 <span className="absolute top-4 right-4 flex items-center gap-1.5 text-[11px] font-bold text-gray-600 bg-gray-100 px-2.5 py-1 rounded-full">
-                  💰 {currentBus.type}
+                  <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                  </svg>
+                  {currentBus.type}
                 </span>
               </div>
 
@@ -417,7 +441,7 @@ export default function App() {
 
               {/* 3. Timeline Section */}
               <div className="flex-1 px-4 relative mb-6">
-                <div className="absolute left-[29px] top-4 bottom-4 w-[2px] bg-gray-200 -z-0"></div>
+                <div className="absolute left-7.25 top-4 bottom-4 w-0.5 bg-gray-200 z-0"></div>
 
                 <div className="flex flex-col gap-6 relative z-10">
                   {orderedStagesList.map((stage, idx) => {
@@ -433,7 +457,7 @@ export default function App() {
                         }`}
                         onClick={() => isCoordinator && handleUpdateStage(stage.id)}
                       >
-                        <div className="flex items-center justify-center w-[30px] h-[30px] mt-0.5">
+                        <div className="flex items-center justify-center w-7.5 h-7.5 mt-0.5">
                           {isCurrent ? (
                             <div className="w-4 h-4 rounded-full bg-black ring-4 ring-black/10"></div>
                           ) : isPassed ? (
@@ -592,7 +616,11 @@ export default function App() {
           
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50">
             <h3 className="font-bold text-gray-800 text-base mb-3 flex items-center gap-2 border-b border-gray-100 pb-2">
-              <span>📍</span> Athi River ➔ Valley Road
+              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Valley Road Campus ➔ Main Campus
             </h3>
             
             <div className="space-y-3">
@@ -619,7 +647,11 @@ export default function App() {
 
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50">
             <h3 className="font-bold text-gray-800 text-base mb-3 flex items-center gap-2 border-b border-gray-100 pb-2">
-              <span>📍</span> Valley Road ➔ Athi River
+              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Main Campus ➔ Valley Road Campus
             </h3>
             
             <div className="space-y-3">
@@ -641,7 +673,10 @@ export default function App() {
 
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50">
             <h3 className="font-bold text-gray-800 text-base mb-3 flex items-center gap-2 border-b border-gray-100 pb-2">
-              <span>💳</span> Fare & Bus Pass Rules
+              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+              </svg>
+              Fare & Bus Pass Rules
             </h3>
             
             <div className="space-y-3">
@@ -659,15 +694,20 @@ export default function App() {
               </div>
             </div>
 
-            <div className="mt-4 bg-blue-50 border border-blue-100 p-3 rounded-xl text-xs text-blue-800 leading-relaxed">
-              <strong>📢 Bus Pass Validity:</strong> Bus Passes are strictly valid **ONLY** on the <strong>6:30 a.m.</strong> bus departing from Valley Road and the <strong>5:00 p.m.</strong> bus departing from Athi River.
+            <div className="mt-4 bg-blue-50 border border-blue-100 p-3 rounded-xl text-xs text-blue-800 leading-relaxed flex items-start gap-2">
+              <svg className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+              </svg>
+              <div>
+                <strong>Bus Pass Validity:</strong> Bus Passes are strictly valid **ONLY** on the <strong>6:30 a.m.</strong> bus departing from Valley Road and the <strong>5:00 p.m.</strong> bus departing from Athi River.
+              </div>
             </div>
           </div>
 
         </div>
       )}
 
-      {/* Subtle Role Switch Footer (For MVP testing) */}
+      {/* Role Switch Footer */}
       <div className="text-center mt-6">
         <button 
           onClick={() => setIsCoordinator(!isCoordinator)}
