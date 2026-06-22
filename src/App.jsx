@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 
-// Import Modular Components
 import AnnouncementBanner from './components/AnnouncementBanner';
 import HeaderCard from './components/HeaderCard';
 import CoordinatorPanel from './components/CoordinatorPanel';
@@ -154,7 +153,7 @@ export default function App() {
     if (currentHour >= 9 && currentHour < 19) {
       cutoffTime = `${todayStr}T09:00:00`;
     } else if (currentHour >= 19 || currentHour < 9) {
-      cutoffTime = `${todayStr}T19:00:00`;
+      cutoffTime = `${todayStr}T20:00:00`;
     }
 
     if (cutoffTime) {
@@ -206,7 +205,7 @@ export default function App() {
     setWaitCounts(counts);
   };
 
-  // AUTOMATED GPS TRACKING & GEOFENCING
+  // AUTOMATED GPS TRACKING & GEOFENCING WITH ANTI-SPOOFING
   const startGpsTracking = (busId) => {
     if (watchIdRef.current) return;
 
@@ -218,10 +217,20 @@ export default function App() {
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        const { latitude, longitude } = position.coords;
+        
+        // 1. Evaluate distance verification (Anti-spoofing)
+        const isEligible = evaluateTrackEligibility(busId, latitude, longitude);
+        if (!isEligible) {
+          setTrackingBusId(null);
+          return;
+        }
+
+        // 2. Start watching position if eligible
         watchIdRef.current = navigator.geolocation.watchPosition(
           (pos) => {
-            const { latitude, longitude } = pos.coords;
-            evaluateGeofenceArrival(busId, latitude, longitude);
+            const { latitude: lat, longitude: lng } = pos.coords;
+            evaluateGeofenceArrival(busId, lat, lng);
           },
           (err) => {
             console.error("Tracking watch error:", err);
@@ -235,6 +244,24 @@ export default function App() {
         setTrackingBusId(null);
       }
     );
+  };
+
+  // Anti-Spoofing: Verifies user is physically close to the last reported bus stage
+  const evaluateTrackEligibility = (busId, userLat, userLng) => {
+    const targetBus = buses.find(b => b.id === busId);
+    if (!targetBus) return false;
+
+    // Find the coordinates of the bus's last reported stage
+    const lastReportedStage = stages.find(s => s.id === targetBus.current_stage_id);
+    if (!lastReportedStage || !lastReportedStage.latitude) return true; // Fallback to trust if database stage lacks coords
+
+    const distance = calculateDistance(userLat, userLng, lastReportedStage.latitude, lastReportedStage.longitude);
+
+    if (distance > 1000) { // If student is more than 1 kilometer away from the actual bus location
+      alert("Permission Denied: You are too far from this bus's current location to track it.");
+      return false;
+    }
+    return true;
   };
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -272,6 +299,12 @@ export default function App() {
 
         await supabase.from('buses').update({ current_stage_id: stage.id }).eq('id', busId);
         await supabase.from('stages').update({ time_passed: timeString }).eq('id', stage.id);
+
+        // Auto-stop tracking if the bus reaches the final destination
+        if (i === ordered.length - 1) {
+          alert("🎉 You have arrived at your destination! Tracking has stopped.");
+          setTrackingBusId(null);
+        }
         break;
       }
     }
@@ -605,7 +638,7 @@ export default function App() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                   <h3 className="font-bold text-red-700 text-sm">No Buses in Transit</h3>
-                  <p className="text-[11px] text-red-400 mt-1">Please refer to the Bus Schedule tab for departure times.</p>
+                  <p className="text-[11px] text-red-400 mt-1">Please refer to the Bus Schedule tab for static departure times.</p>
                 </div>
               ) : (
                 /* ACTIVE BUS VISUAL SLIDER (PASSENGER CARD) */
@@ -764,14 +797,6 @@ export default function App() {
               /* Coordinator Bottom Actions */
               <div className="flex flex-col gap-3 w-full">
                 
-                {/* Clear Waitlist Button */}
-                <button
-                  onClick={handleClearWaitlistManual}
-                  className="w-full py-4 bg-red-500 hover:bg-red-600 active:scale-[0.98] transition text-white font-bold rounded-2xl shadow-md text-center"
-                >
-                  Clear wait list
-                </button>
-
                 {/* Toggle Capacity Button */}
                 <button 
                   onClick={handleToggleFull}
@@ -783,6 +808,15 @@ export default function App() {
                 >
                   {currentBus.is_full ? "Mark As Available" : "Mark As Full"}
                 </button>
+
+                {/* Clear Waitlist Button */}
+                <button
+                  onClick={handleClearWaitlistManual}
+                  className="w-full py-4 bg-red-500 hover:bg-red-600 active:scale-[0.98] transition text-white font-bold rounded-2xl shadow-md text-center"
+                >
+                  🧹 Clear Active Waitlist
+                </button>
+
               </div>
             ) : (
               /* Student Controls (or Coordinator when no bus online) */

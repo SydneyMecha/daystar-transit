@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 export default function HeaderCard({ 
   currentBus, 
@@ -6,9 +6,24 @@ export default function HeaderCard({
   visibleBusesLength, 
   setCurrentBusIndex, 
   trackingBusId, 
-  setTrackingBusId 
+  handleToggleTracking 
 }) {
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+
   if (!currentBus) return null;
+
+  const onTrackClick = () => {
+    if (trackingBusId === currentBus.id) {
+      handleToggleTracking(null);
+    } else {
+      setShowConfirmModal(true);
+    }
+  };
+
+  const confirmTracking = () => {
+    setShowConfirmModal(false);
+    handleToggleTracking(currentBus.id);
+  };
 
   return (
     <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50 mb-4 relative">
@@ -56,16 +71,43 @@ export default function HeaderCard({
       {currentBus.tracking_mode === 'auto' && (
         <div className="mt-4 pt-3 border-t border-gray-100 flex justify-center">
           <button
-            onClick={() => setTrackingBusId(trackingBusId === currentBus.id ? null : currentBus.id)}
+            onClick={onTrackClick}
             className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 ${
               trackingBusId === currentBus.id
-                ? "bg-red-100 text-red-600 border border-red-200"
-                : "bg-sky-100 text-sky-600 border-sky-200 hover:bg-sky-200"
+                ? "bg-red-100 text-red-600 border border-red-200 animate-pulse"
+                : "bg-sky-100 text-sky-600 border border-sky-200 hover:bg-sky-200"
             }`}
           >
             <span className={`w-2 h-2 rounded-full ${trackingBusId === currentBus.id ? "bg-red-500 animate-ping" : "bg-sky-500"}`}></span>
             {trackingBusId === currentBus.id ? "Stop My Tracking" : "I'm on this bus (Share GPS)"}
           </button>
+        </div>
+      )}
+
+      {/* GPS VERIFICATION MODAL */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full text-center shadow-lg">
+            <div className="text-3xl mb-2">🚌</div>
+            <h4 className="font-bold text-gray-800 text-base mb-1">Confirm Tracking Status</h4>
+            <p className="text-xs text-gray-400 leading-relaxed mb-4">
+              Are you physically sitting inside this bus right now? False reports will mislead students waiting at upcoming stages.
+            </p>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl text-xs"
+              >
+                No, Cancel
+              </button>
+              <button 
+                onClick={confirmTracking}
+                className="flex-1 py-2.5 bg-[#38BDF8] hover:bg-[#0EA5E9] text-white font-bold rounded-xl text-xs"
+              >
+                Yes, Start GPS
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

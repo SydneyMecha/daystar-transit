@@ -50,11 +50,11 @@ export default function CoordinatorPanel({
               onClick={handleToggleActive}
               className={`py-4 font-bold rounded-2xl transition text-xs active:scale-[0.98] text-center shadow-sm ${
                 currentBus.is_active 
-                  ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/10" 
-                  : "bg-gray-800 hover:bg-gray-900 text-white shadow-gray-800/10"
+                  ? "bg-red-500 hover:bg-red-600 text-white shadow-red-500/10" 
+                  : "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/10"
               }`}
             >
-              {currentBus.is_active ? "🟢 Go Offline (End)" : "⚪ Go Online (Start)"}
+              {currentBus.is_active ? "🟢 GO OFFLINE" : "⚪ GO ONLINE"}
             </button>
           </div>
 
@@ -64,7 +64,7 @@ export default function CoordinatorPanel({
               onClick={() => handleUpdateTrackingMode('auto')}
               className={`py-3.5 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5 border ${
                 currentBus.tracking_mode === 'auto'
-                  ? "bg-sky-100 text-sky-600 border-sky-200"
+                  ? "bg-sky-100 text-sky-600 border-sky-200 shadow-sm"
                   : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
               }`}
             >
@@ -76,7 +76,7 @@ export default function CoordinatorPanel({
               onClick={() => handleUpdateTrackingMode('manual')}
               className={`py-3.5 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5 border ${
                 currentBus.tracking_mode === 'manual'
-                  ? "bg-amber-100 text-amber-600 border-amber-200"
+                  ? "bg-amber-100 text-amber-600 border-amber-200 shadow-sm"
                   : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
               }`}
             >
