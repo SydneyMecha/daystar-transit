@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; // Added useRef here
 import { supabase } from './supabaseClient';
 
 export default function App() {
@@ -14,7 +14,7 @@ export default function App() {
   const [isCoordinator, setIsCoordinator] = useState(false);
 
   // Student interaction states
-  const [selectedStop, setSelectedStop] = useState(() => localStorage.getItem('transit_selected_stop') || "");
+  const [selectedStop, setSelectedStop] = useState(() => localStorage.getItem('transit_selected_stop') || "Valley Road Campus");
   const [userState, setUserState] = useState(() => localStorage.getItem('transit_user_state') || "idle");
   const [waitingRecordId, setWaitingRecordId] = useState(() => localStorage.getItem('transit_waiting_record_id') || null);
 
@@ -239,7 +239,6 @@ export default function App() {
     const ordered = isReverse ? [...stages].reverse() : stages;
     const currentIdx = ordered.findIndex(s => s.id === targetBus.current_stage_id);
 
-    // FIX: Corrected loop bounds assessment from "idx" to "i"
     for (let i = currentIdx + 1; i < ordered.length; i++) {
       const stage = ordered[i];
       if (!stage || !stage.latitude || !stage.longitude) continue;
@@ -349,8 +348,6 @@ export default function App() {
 
   const handleUpdateDirection = async (newDirection) => {
     if (!currentBus) return;
-    
-    // FIX: default stage scales dynamically relative to the active number of stages (stages.length)
     const defaultStageId = newDirection.startsWith("Valley Road") ? 1 : stages.length;
 
     const { error: busError } = await supabase
@@ -724,7 +721,7 @@ export default function App() {
                         }`}>
                           {stage.name}
                         </h3>
-                        {isCurrent && (
+                        {isCoordinator && isCurrent && (
                           <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold animate-pulse">ACTIVE</span>
                         )}
                       </div>
@@ -759,7 +756,7 @@ export default function App() {
                   onClick={handleClearWaitlistManual}
                   className="w-full py-4 bg-red-500 hover:bg-red-600 active:scale-[0.98] transition text-white font-bold rounded-2xl shadow-md text-center"
                 >
-                  🧹 Clear Active Waitlist
+                  Briefly explain how this can be done in Phase 2: Most fleet trackers (SinoTrack, Cartrack, Tramigo, etc.) have an API or can forward data (HTTP POST) to a webhook. If they can get the API credentials from the transport department, we can write a simple serverless function in Supabase (Edge Functions) to fetch the location automatically!
                 </button>
 
                 {/* Toggle Capacity Button */}
@@ -926,13 +923,8 @@ export default function App() {
               </div>
             </div>
 
-            <div className="mt-4 bg-blue-50 border border-blue-100 p-3 rounded-xl text-xs text-blue-800 leading-relaxed flex items-start gap-2">
-              <svg className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-              </svg>
-              <div>
-                <strong>Bus Pass Validity:</strong> Bus Passes are strictly valid **ONLY** on the <strong>6:30 a.m.</strong> bus departing from Valley Road and the <strong>5:00 p.m.</strong> bus departing from Athi River.
-              </div>
+            <div className="mt-4 bg-blue-50 border border-blue-100 p-3 rounded-xl text-xs text-blue-800 leading-relaxed">
+              <strong>📢 Bus Pass Validity:</strong> Bus Passes are strictly valid **ONLY** on the <strong>6:30 a.m.</strong> bus departing from Valley Road and the <strong>5:00 p.m.</strong> bus departing from Athi River.
             </div>
           </div>
 
