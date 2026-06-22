@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
-import { SpeedInsights } from "@vercel/speed-insights/next"
 
 import AnnouncementBanner from './components/AnnouncementBanner';
 import HeaderCard from './components/HeaderCard';
