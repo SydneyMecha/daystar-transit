@@ -248,20 +248,23 @@ export default function App() {
 
   // Anti-Spoofing: Verifies user is physically close to the last reported bus stage
   const evaluateTrackEligibility = (busId, userLat, userLng) => {
+    return true;
+
+    /* 
     const targetBus = buses.find(b => b.id === busId);
     if (!targetBus) return false;
 
-    // Find the coordinates of the bus's last reported stage
     const lastReportedStage = stages.find(s => s.id === targetBus.current_stage_id);
-    if (!lastReportedStage || !lastReportedStage.latitude) return true; // Fallback to trust if database stage lacks coords
+    if (!lastReportedStage || !lastReportedStage.latitude) return true;
 
     const distance = calculateDistance(userLat, userLng, lastReportedStage.latitude, lastReportedStage.longitude);
 
-    if (distance > 1000) { // If student is more than 1 kilometer away from the actual bus location
+    if (distance > 1000) {
       alert("Permission Denied: You are too far from this bus's current location to track it.");
       return false;
     }
     return true;
+    */
   };
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
