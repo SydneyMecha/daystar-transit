@@ -1,5 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react'; // Added useRef here
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
+
+// Import Modular Components
+import AnnouncementBanner from './components/AnnouncementBanner';
+import HeaderCard from './components/HeaderCard';
+import CoordinatorPanel from './components/CoordinatorPanel';
+import Timeline from './components/Timeline';
+import ActionArea from './components/ActionArea';
+import ScheduleTab from './components/ScheduleTab';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -10,17 +18,29 @@ export default function App() {
   const [announcement, setAnnouncement] = useState(null);
   
   // App Navigation & Roles
-  const [activeTab, setActiveTab] = useState("tracker"); // "tracker" or "schedule"
+  const [activeTab, setActiveTab] = useState("tracker");
   const [isCoordinator, setIsCoordinator] = useState(false);
 
-  // Student interaction states
-  const [selectedStop, setSelectedStop] = useState(() => localStorage.getItem('transit_selected_stop') || "Valley Road Campus");
-  const [userState, setUserState] = useState(() => localStorage.getItem('transit_user_state') || "idle");
-  const [waitingRecordId, setWaitingRecordId] = useState(() => localStorage.getItem('transit_waiting_record_id') || null);
+  // Student interaction states (Safely parsed from LocalStorage strings)
+  const [selectedStop, setSelectedStop] = useState(() => {
+    const stop = localStorage.getItem('transit_selected_stop');
+    return (stop && stop !== 'null' && stop !== 'undefined') ? stop : "Valley Road Campus";
+  });
+
+  const [userState, setUserState] = useState(() => {
+    const state = localStorage.getItem('transit_user_state');
+    return (state && state !== 'null' && state !== 'undefined') ? state : "idle";
+  });
+
+  const [waitingRecordId, setWaitingRecordId] = useState(() => {
+    const id = localStorage.getItem('transit_waiting_record_id');
+    return (id && id !== 'null' && id !== 'undefined') ? id : null;
+  });
 
   // GPS Crowdsourced Tracker State
   const [trackingBusId, setTrackingBusId] = useState(() => {
-    return parseInt(localStorage.getItem('transit_tracking_bus_id')) || null;
+    const id = localStorage.getItem('transit_tracking_bus_id');
+    return (id && id !== 'null' && id !== 'undefined') ? parseInt(id) : null;
   });
   const watchIdRef = useRef(null);
 
@@ -186,6 +206,7 @@ export default function App() {
     setWaitCounts(counts);
   };
 
+  // AUTOMATED GPS TRACKING & GEOFENCING
   const startGpsTracking = (busId) => {
     if (watchIdRef.current) return;
 
@@ -423,14 +444,6 @@ export default function App() {
     }
   }, [currentBus, stages]);
 
-  if (loading || stages.length === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F7F7F7]">
-        <div className="text-gray-500 font-semibold animate-pulse">Loading transit portal...</div>
-      </div>
-    );
-  }
-
   const orderedStagesList = getOrderedStages();
   const currentStageIndex = orderedStagesList.findIndex(s => s.id === currentBus?.current_stage_id);
   const activeDirectionCounts = currentBus ? (waitCounts[currentBus.direction] || {}) : waitCounts['Valley Road ➔ Athi River'] || {};
@@ -576,7 +589,7 @@ export default function App() {
                       }`}
                     >
                       <span className={`w-2 h-2 rounded-full ${currentBus.tracking_mode === 'manual' ? "bg-amber-500" : "bg-gray-300"}`}></span>
-                      Manual Fallback
+                      Manual Tracking
                     </button>
                   </div>
                 </>
@@ -592,7 +605,7 @@ export default function App() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                   <h3 className="font-bold text-red-700 text-sm">No Buses in Transit</h3>
-                  <p className="text-[11px] text-red-400 mt-1">Please refer to the Bus Schedule tab for static departure times.</p>
+                  <p className="text-[11px] text-red-400 mt-1">Please refer to the Bus Schedule tab for departure times.</p>
                 </div>
               ) : (
                 /* ACTIVE BUS VISUAL SLIDER (PASSENGER CARD) */
@@ -650,7 +663,7 @@ export default function App() {
                         }`}
                       >
                         <span className={`w-2 h-2 rounded-full ${trackingBusId === currentBus.id ? "bg-red-500 animate-ping" : "bg-sky-500"}`}></span>
-                        {trackingBusId === currentBus.id ? "Stop My Tracking Loop" : "I'm on this bus (Share GPS)"}
+                        {trackingBusId === currentBus.id ? "Stop My Tracking" : "I'm on this bus (Share GPS)"}
                       </button>
                     </div>
                   )}
@@ -756,7 +769,7 @@ export default function App() {
                   onClick={handleClearWaitlistManual}
                   className="w-full py-4 bg-red-500 hover:bg-red-600 active:scale-[0.98] transition text-white font-bold rounded-2xl shadow-md text-center"
                 >
-                  Briefly explain how this can be done in Phase 2: Most fleet trackers (SinoTrack, Cartrack, Tramigo, etc.) have an API or can forward data (HTTP POST) to a webhook. If they can get the API credentials from the transport department, we can write a simple serverless function in Supabase (Edge Functions) to fetch the location automatically!
+                  Clear wait list
                 </button>
 
                 {/* Toggle Capacity Button */}
