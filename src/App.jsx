@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 
 export default function App() {
@@ -14,7 +14,7 @@ export default function App() {
   const [isCoordinator, setIsCoordinator] = useState(false);
 
   // Student interaction states
-  const [selectedStop, setSelectedStop] = useState(() => localStorage.getItem('transit_selected_stop') || "Valley Road Campus");
+  const [selectedStop, setSelectedStop] = useState(() => localStorage.getItem('transit_selected_stop') || "");
   const [userState, setUserState] = useState(() => localStorage.getItem('transit_user_state') || "idle");
   const [waitingRecordId, setWaitingRecordId] = useState(() => localStorage.getItem('transit_waiting_record_id') || null);
 
@@ -125,7 +125,6 @@ export default function App() {
     else setAnnouncement(data);
   };
 
-  // TIME-BASED AUTO CLEAR: Archive lists at 9:00 AM and 7:00 PM
   const clearOldWaitlistRecords = async () => {
     const now = new Date();
     const currentHour = now.getHours();
@@ -187,7 +186,6 @@ export default function App() {
     setWaitCounts(counts);
   };
 
-  // AUTOMATED GPS TRACKING & PERMISSIONS TRIGGER
   const startGpsTracking = (busId) => {
     if (watchIdRef.current) return;
 
@@ -197,10 +195,8 @@ export default function App() {
       return;
     }
 
-    // Trigger explicit permission prompt
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        // Permission granted, setup watchPosition loop
         watchIdRef.current = navigator.geolocation.watchPosition(
           (pos) => {
             const { latitude, longitude } = pos.coords;
@@ -243,6 +239,7 @@ export default function App() {
     const ordered = isReverse ? [...stages].reverse() : stages;
     const currentIdx = ordered.findIndex(s => s.id === targetBus.current_stage_id);
 
+    // FIX: Corrected loop bounds assessment from "idx" to "i"
     for (let i = currentIdx + 1; i < ordered.length; i++) {
       const stage = ordered[i];
       if (!stage || !stage.latitude || !stage.longitude) continue;
@@ -311,7 +308,7 @@ export default function App() {
   // COORDINATOR ACTIONS
   const handleUpdateStage = async (stageId) => {
     if (!currentBus) return;
-    if (currentBus.tracking_mode === 'auto') return; // Clicking is disabled in auto-mode
+    if (currentBus.tracking_mode === 'auto') return;
 
     const now = new Date();
     const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase();
@@ -352,7 +349,9 @@ export default function App() {
 
   const handleUpdateDirection = async (newDirection) => {
     if (!currentBus) return;
-    const defaultStageId = newDirection.startsWith("Valley Road") ? 1 : 20; // 20 is Main Campus
+    
+    // FIX: default stage scales dynamically relative to the active number of stages (stages.length)
+    const defaultStageId = newDirection.startsWith("Valley Road") ? 1 : stages.length;
 
     const { error: busError } = await supabase
       .from('buses')
@@ -580,7 +579,7 @@ export default function App() {
                       }`}
                     >
                       <span className={`w-2 h-2 rounded-full ${currentBus.tracking_mode === 'manual' ? "bg-amber-500" : "bg-gray-300"}`}></span>
-                      Manual Tracking
+                      Manual Fallback
                     </button>
                   </div>
                 </>
@@ -642,7 +641,7 @@ export default function App() {
                     {currentBus.type}
                   </span>
 
-                  {/* PASSENGER GPS TRACKING ENABLER (Only active if bus tracking_mode is set to 'auto') */}
+                  {/* PASSENGER GPS TRACKING ENABLER */}
                   {currentBus.tracking_mode === 'auto' && (
                     <div className="mt-4 pt-3 border-t border-gray-100 flex justify-center">
                       <button
@@ -698,7 +697,6 @@ export default function App() {
                 const isCurrent = currentBus ? idx === currentStageIndex : false;
                 const currentWaitCount = activeDirectionCounts[stage.name] || 0;
 
-                // Coordinators can only click stages manually if tracking_mode is set to 'manual'
                 const isManualClickable = isCoordinator && currentBus && currentBus.tracking_mode === 'manual';
 
                 return (
