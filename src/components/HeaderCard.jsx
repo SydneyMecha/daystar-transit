@@ -20,8 +20,14 @@ export default function HeaderCard({
     }
   };
 
-  const confirmTracking = () => {
+  const confirmTracking = async () => {
     setShowConfirmModal(false);
+    
+    // Request notification permissions directly on tracker click!
+    if ("Notification" in window && Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
+    
     handleToggleTracking(currentBus.id);
   };
 

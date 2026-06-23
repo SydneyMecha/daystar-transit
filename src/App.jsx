@@ -360,6 +360,10 @@ export default function App() {
 
   // STUDENT ACTIONS
   const handleMarkAsWaiting = async () => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.permission = await Notification.requestPermission();
+    }
+    
     const direction = currentBus ? currentBus.direction : 'Valley Road ➔ Athi River';
 
     const { data, error } = await supabase
