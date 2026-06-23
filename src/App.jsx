@@ -85,17 +85,19 @@ export default function App() {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'wait_list' }, () => {
         fetchWaitCounts();
-      })
-      // UPDATE: Intercept announcement changes and trigger native notification if marked as push
+      })  
       .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, (payload) => {
         fetchAnnouncement();
-        
-        // If a new announcement is inserted and has send_push enabled, trigger a native device alert
-        if (
-          payload.eventType === 'INSERT' && 
+
+        const isNewActivePush = payload.eventType === 'INSERT' && payload.new.is_active && payload.new.send_push;
+
+        const isPushJustToggledOn = 
+          payload.eventType === 'UPDATE' && 
           payload.new.is_active && 
-          payload.new.send_push
-        ) {
+          payload.new.send_push && 
+          payload.old?.send_push === false; // must have actually flipped, not just any update
+
+        if (isNewActivePush || isPushJustToggledOn) {
           sendSystemNotification("Daystar Transit Alert", payload.new.message);
         }
       })
