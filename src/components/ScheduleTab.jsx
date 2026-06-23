@@ -3,13 +3,39 @@ import React from 'react';
 export default function ScheduleTab() {
   return (
     <div className="flex-1 flex flex-col gap-5 overflow-y-auto max-h-[75vh] px-1 pb-4">
-      <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50">
+       <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50">
         <h3 className="font-bold text-gray-800 text-base mb-3 flex items-center gap-2 border-b border-gray-100 pb-2">
           <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
           Valley Road Campus ➔ Main Campus
+        </h3>
+        
+        <div className="space-y-3">
+          <div>
+            <p className="text-xs font-bold text-sky-500 uppercase tracking-wider">Mon to Fri (Weekdays)</p>
+            <p className="text-sm font-semibold text-gray-700 mt-0.5">6:20 a.m. | 5:00 p.m.</p>
+          </div>
+
+          <div>
+            <p className="text-xs font-bold text-[#EAB308] uppercase tracking-wider">Sunday (Weekend)</p>
+            <p className="text-sm font-semibold text-gray-700 mt-0.5">3:00 p.m. – 5:00 p.m.</p>
+          </div>
+        </div>
+
+        <div className="mt-4 bg-amber-50 border border-amber-100 p-3 rounded-xl text-xs text-amber-800 leading-relaxed">
+          <strong>⚠️ Parking Location:</strong> Weekday morning buses and Sunday evening buses park at the <strong>Entrance Gate</strong>. Weekday evening buses park at the <strong>Exit Gate</strong>.
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50">
+        <h3 className="font-bold text-gray-800 text-base mb-3 flex items-center gap-2 border-b border-gray-100 pb-2">
+          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Main Campus ➔ Valley Road Campus
         </h3>
         
         <div className="space-y-3">
@@ -31,32 +57,6 @@ export default function ScheduleTab() {
 
         <div className="mt-4 bg-amber-50 border border-amber-100 p-3 rounded-xl text-xs text-amber-800 leading-relaxed">
           <strong>⚠️ Parking Location:</strong> The <strong>5:00 a.m.</strong> weekday bus and the <strong>Saturday</strong> bus park strictly at the <strong>Hope Centre Park</strong>.
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50">
-        <h3 className="font-bold text-gray-800 text-base mb-3 flex items-center gap-2 border-b border-gray-100 pb-2">
-          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          Main Campus ➔ Valley Road Campus
-        </h3>
-        
-        <div className="space-y-3">
-          <div>
-            <p className="text-xs font-bold text-sky-500 uppercase tracking-wider">Mon to Fri (Weekdays)</p>
-            <p className="text-sm font-semibold text-gray-700 mt-0.5">6:20 a.m. | 5:00 p.m.</p>
-          </div>
-
-          <div>
-            <p className="text-xs font-bold text-[#EAB308] uppercase tracking-wider">Sunday (Weekend)</p>
-            <p className="text-sm font-semibold text-gray-700 mt-0.5">3:00 p.m. – 5:00 p.m.</p>
-          </div>
-        </div>
-
-        <div className="mt-4 bg-amber-50 border border-amber-100 p-3 rounded-xl text-xs text-amber-800 leading-relaxed">
-          <strong>⚠️ Parking Location:</strong> Weekday morning buses and Sunday evening buses park at the <strong>Entrance Gate</strong>. Weekday evening buses park at the <strong>Exit Gate</strong>.
         </div>
       </div>
 

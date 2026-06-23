@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 
+// Import Modular Components
 import AnnouncementBanner from './components/AnnouncementBanner';
 import HeaderCard from './components/HeaderCard';
 import CoordinatorPanel from './components/CoordinatorPanel';
@@ -43,8 +44,25 @@ export default function App() {
   });
   const watchIdRef = useRef(null);
 
-  // Filter active buses for passenger view
-  const visibleBuses = isCoordinator ? buses : buses.filter(b => b.is_active);
+  // Filter and SORT buses (Buses closest to Athi River are placed first)
+  const visibleBuses = isCoordinator 
+    ? buses 
+    : buses.filter(b => b.is_active).sort((a, b) => {
+        const stageA = stages.find(s => s.id === a.current_stage_id);
+        const stageB = stages.find(s => s.id === b.current_stage_id);
+        if (!stageA || !stageB) return 0;
+
+        const remainingA = a.direction.startsWith("Valley Road") 
+          ? (21 - stageA.sequence_order) 
+          : (stageA.sequence_order - 1);
+
+        const remainingB = b.direction.startsWith("Valley Road") 
+          ? (21 - stageB.sequence_order) 
+          : (stageB.sequence_order - 1);
+
+        return remainingA - remainingB; // Sort closest first
+      });
+
   const currentBus = visibleBuses[currentBusIndex] || null;
 
   useEffect(() => {
@@ -56,7 +74,7 @@ export default function App() {
   useEffect(() => {
     fetchInitialData();
 
-    // Subscribe to DB updates
+    // Subscribe to DB updates in real-time
     const dbSubscription = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'buses' }, () => {
@@ -68,8 +86,18 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'wait_list' }, () => {
         fetchWaitCounts();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
+      // UPDATE: Intercept announcement changes and trigger native notification if marked as push
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, (payload) => {
         fetchAnnouncement();
+        
+        // If a new announcement is inserted and has send_push enabled, trigger a native device alert
+        if (
+          payload.eventType === 'INSERT' && 
+          payload.new.is_active && 
+          payload.new.send_push
+        ) {
+          sendSystemNotification("Daystar Transit Alert", payload.new.message);
+        }
       })
       .subscribe();
 
@@ -153,7 +181,7 @@ export default function App() {
     if (currentHour >= 9 && currentHour < 19) {
       cutoffTime = `${todayStr}T09:00:00`;
     } else if (currentHour >= 19 || currentHour < 9) {
-      cutoffTime = `${todayStr}T20:00:00`;
+      cutoffTime = `${todayStr}T19:00:00`;
     }
 
     if (cutoffTime) {
@@ -205,6 +233,21 @@ export default function App() {
     setWaitCounts(counts);
   };
 
+  // SYSTEM NOTIFICATIONS TRIGGER
+  const sendSystemNotification = (title, body) => {
+    if (!("Notification" in window)) return;
+
+    if (Notification.permission === "granted") {
+      new Notification(title, { body, icon: "/logo.png" });
+    } else if (Notification.permission !== "denied") {
+      Notification.requestPermission().then(permission => {
+        if (permission === "granted") {
+          new Notification(title, { body, icon: "/logo.png" });
+        }
+      });
+    }
+  };
+
   // AUTOMATED GPS TRACKING & GEOFENCING WITH ANTI-SPOOFING
   const startGpsTracking = (busId) => {
     if (watchIdRef.current) return;
@@ -213,6 +256,11 @@ export default function App() {
       alert("Geolocation is not supported by this browser.");
       setTrackingBusId(null);
       return;
+    }
+
+    // Trigger Notification permission prompt
+    if ("Notification" in window && Notification.permission !== "granted") {
+      Notification.requestPermission();
     }
 
     navigator.geolocation.getCurrentPosition(
@@ -234,7 +282,7 @@ export default function App() {
           },
           (err) => {
             console.error("Tracking watch error:", err);
-            alert("Location tracking lost. Please keep your browser open and GPS active.");
+            sendSystemNotification("Transit Tracker Error", "Location tracking lost. Please keep your browser open.");
           },
           { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
         );
@@ -248,23 +296,7 @@ export default function App() {
 
   // Anti-Spoofing: Verifies user is physically close to the last reported bus stage
   const evaluateTrackEligibility = (busId, userLat, userLng) => {
-    return true;
-
-    /* 
-    const targetBus = buses.find(b => b.id === busId);
-    if (!targetBus) return false;
-
-    const lastReportedStage = stages.find(s => s.id === targetBus.current_stage_id);
-    if (!lastReportedStage || !lastReportedStage.latitude) return true;
-
-    const distance = calculateDistance(userLat, userLng, lastReportedStage.latitude, lastReportedStage.longitude);
-
-    if (distance > 1000) {
-      alert("Permission Denied: You are too far from this bus's current location to track it.");
-      return false;
-    }
-    return true;
-    */
+    return true; // Bypass active. Anyone can start tracking.
   };
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -300,13 +332,26 @@ export default function App() {
         const now = new Date();
         const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase();
 
-        await supabase.from('buses').update({ current_stage_id: stage.id }).eq('id', busId);
-        await supabase.from('stages').update({ time_passed: timeString }).eq('id', stage.id);
+        // 1. Build updated bus JSONB object independently
+        const passedStages = { ...targetBus.passed_stages };
+        passedStages[stage.id] = timeString;
+
+        // Optimistically update database
+        await supabase.from('buses').update({ 
+          current_stage_id: stage.id,
+          passed_stages: passedStages
+        }).eq('id', busId);
 
         // Auto-stop tracking if the bus reaches the final destination
         if (i === ordered.length - 1) {
-          alert("🎉 You have arrived at your destination! Tracking has stopped.");
+          // Clear watch FIRST to prevent duplicate alerts
+          if (watchIdRef.current) {
+            navigator.geolocation.clearWatch(watchIdRef.current);
+            watchIdRef.current = null;
+          }
           setTrackingBusId(null);
+          sendSystemNotification("Arrived!", "🎉 You have arrived at your destination! Tracking has stopped.");
+          alert("🎉 You have arrived at your destination! Tracking has stopped.");
         }
         break;
       }
@@ -361,7 +406,7 @@ export default function App() {
     }
   };
 
-  // COORDINATOR ACTIONS
+  // COORDINATOR ACTIONS (Optimistic state updates fully implemented)
   const handleUpdateStage = async (stageId) => {
     if (!currentBus) return;
     if (currentBus.tracking_mode === 'auto') return;
@@ -369,32 +414,33 @@ export default function App() {
     const now = new Date();
     const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase();
 
+    // 1. Build local isolated passed times JSONB map
+    const passedStages = { ...currentBus.passed_stages };
+    passedStages[stageId] = timeString;
+
+    // OPTIMISTICALLY update buses locally for zero-lag response
+    setBuses(prevBuses => prevBuses.map(b => 
+      b.id === currentBus.id ? { ...b, current_stage_id: stageId, passed_stages: passedStages } : b
+    ));
+
     const { error: busError } = await supabase
       .from('buses')
-      .update({ current_stage_id: stageId })
+      .update({ 
+        current_stage_id: stageId,
+        passed_stages: passedStages
+      })
       .eq('id', currentBus.id);
 
-    const orderedStages = getOrderedStages();
-    const currentIdx = orderedStages.findIndex(s => s.id === stageId);
-
-    const updates = orderedStages.map((stage, idx) => {
-      let passedTime = stage.time_passed;
-      if (idx < currentIdx) {
-        passedTime = stage.time_passed || timeString;
-      } else if (idx === currentIdx) {
-        passedTime = timeString;
-      } else {
-        passedTime = null;
-      }
-      return supabase.from('stages').update({ time_passed: passedTime }).eq('id', stage.id);
-    });
-
-    await Promise.all(updates);
     if (busError) console.error("Error moving bus:", busError);
   };
 
   const handleToggleFull = async () => {
     if (!currentBus) return;
+
+    setBuses(prevBuses => prevBuses.map(b => 
+      b.id === currentBus.id ? { ...b, is_full: !b.is_full } : b
+    ));
+
     const { error } = await supabase
       .from('buses')
       .update({ is_full: !currentBus.is_full })
@@ -407,28 +453,32 @@ export default function App() {
     if (!currentBus) return;
     const defaultStageId = newDirection.startsWith("Valley Road") ? 1 : stages.length;
 
+    setBuses(prevBuses => prevBuses.map(b => 
+      b.id === currentBus.id ? { ...b, direction: newDirection, current_stage_id: defaultStageId, is_full: false, passed_stages: {} } : b
+    ));
+
     const { error: busError } = await supabase
       .from('buses')
       .update({ 
         direction: newDirection,
         current_stage_id: defaultStageId,
-        is_full: false
+        is_full: false,
+        passed_stages: {} // Reset JSONB timeline for new trip
       })
       .eq('id', currentBus.id);
 
     if (busError) {
       console.error("Error updating direction:", busError);
-      return;
     }
-
-    const clearUpdates = stages.map(stage => {
-      return supabase.from('stages').update({ time_passed: null }).eq('id', stage.id);
-    });
-    await Promise.all(clearUpdates);
   };
 
   const handleToggleActive = async () => {
     if (!currentBus) return;
+
+    setBuses(prevBuses => prevBuses.map(b => 
+      b.id === currentBus.id ? { ...b, is_active: !b.is_active } : b
+    ));
+
     const { error } = await supabase
       .from('buses')
       .update({ is_active: !currentBus.is_active })
@@ -439,6 +489,11 @@ export default function App() {
 
   const handleUpdateTrackingMode = async (mode) => {
     if (!currentBus) return;
+
+    setBuses(prevBuses => prevBuses.map(b => 
+      b.id === currentBus.id ? { ...b, tracking_mode: mode } : b
+    ));
+
     const { error } = await supabase
       .from('buses')
       .update({ tracking_mode: mode })
@@ -450,6 +505,8 @@ export default function App() {
   const handleClearWaitlistManual = async () => {
     const confirmClear = window.confirm("Are you sure you want to clear the entire passenger waitlist now?");
     if (!confirmClear) return;
+
+    setWaitCounts({});
 
     const { error } = await supabase
       .from('wait_list')
@@ -540,445 +597,64 @@ export default function App() {
       </div>
 
       {/* DYNAMIC ANNOUNCEMENT BANNER */}
-      {announcement && activeTab === "tracker" && (
-        <div className="bg-amber-100 border border-amber-200 rounded-2xl p-3 text-amber-800 leading-relaxed text-xs font-semibold mb-4 flex items-start gap-2 shadow-sm animate-pulse">
-          <svg className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-          </svg>
-          <div>{announcement.message}</div>
-        </div>
-      )}
+      <AnnouncementBanner announcement={announcement} />
 
       {activeTab === "tracker" ? (
         /* ==================== TAB 1: LIVE TRACKER ==================== */
         <>
           {isCoordinator ? (
             /* ================= COORDINATOR CONTROL PANEL ================= */
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50 mb-4 flex flex-col gap-4">
-              <div className="flex items-center gap-2 text-gray-600 font-semibold text-sm border-b border-gray-100 pb-2">
-                <img src="/logo.png" alt="Transit Logo" className="w-8 h-8 object-contain" />
-                Coordinator Control Panel
-              </div>
-
-              {/* 1. Bus Selection Dropdown */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400">Select Active Bus Plate</label>
-                <select 
-                  value={currentBusIndex} 
-                  onChange={(e) => setCurrentBusIndex(parseInt(e.target.value))}
-                  className="bg-gray-100 border border-gray-200 rounded-2xl p-3.5 outline-none font-bold text-gray-700 cursor-pointer text-sm w-full"
-                >
-                  {buses.map((b, idx) => (
-                    <option key={b.id} value={idx}>{b.plate_number} ({b.type})</option>
-                  ))}
-                </select>
-              </div>
-
-              {currentBus && (
-                <>
-                  {/* 2. Direction & Go Online Row Grid */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-gray-50 border border-gray-200 rounded-2xl p-3 flex flex-col gap-1 shadow-sm">
-                      <label className="text-[9px] uppercase font-bold tracking-wider text-gray-400">Trip Direction</label>
-                      <select 
-                        value={currentBus.direction} 
-                        onChange={(e) => handleUpdateDirection(e.target.value)}
-                        className="bg-transparent w-full outline-none font-bold text-gray-700 cursor-pointer text-xs"
-                      >
-                        <option value="Valley Road ➔ Athi River">Valley Road ➔ Athi River</option>
-                        <option value="Athi River ➔ Valley Road">Athi River ➔ Valley Road</option>
-                      </select>
-                    </div>
-
-                    <button 
-                      onClick={handleToggleActive}
-                      className={`py-4 font-bold rounded-2xl transition text-xs active:scale-[0.98] text-center shadow-sm ${
-                        currentBus.is_active 
-                          ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/10" 
-                          : "bg-gray-800 hover:bg-gray-900 text-white shadow-gray-800/10"
-                      }`}
-                    >
-                      {currentBus.is_active ? "🟢 Go Offline (End)" : "⚪ Go Online (Start)"}
-                    </button>
-                  </div>
-
-                  {/* 3. Tracking Mode Row Grid (Automatic vs Manual) */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => handleUpdateTrackingMode('auto')}
-                      className={`py-3.5 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5 border ${
-                        currentBus.tracking_mode === 'auto'
-                          ? "bg-sky-100 text-sky-600 border-sky-200"
-                          : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
-                      }`}
-                    >
-                      <span className={`w-2 h-2 rounded-full ${currentBus.tracking_mode === 'auto' ? "bg-sky-500 animate-pulse" : "bg-gray-300"}`}></span>
-                      Auto Tracking
-                    </button>
-
-                    <button
-                      onClick={() => handleUpdateTrackingMode('manual')}
-                      className={`py-3.5 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5 border ${
-                        currentBus.tracking_mode === 'manual'
-                          ? "bg-amber-100 text-amber-600 border-amber-200"
-                          : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
-                      }`}
-                    >
-                      <span className={`w-2 h-2 rounded-full ${currentBus.tracking_mode === 'manual' ? "bg-amber-500" : "bg-gray-300"}`}></span>
-                      Manual Tracking
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+            <CoordinatorPanel 
+              buses={buses}
+              currentBusIndex={currentBusIndex}
+              setCurrentBusIndex={setCurrentBusIndex}
+              currentBus={currentBus}
+              handleUpdateDirection={handleUpdateDirection}
+              handleToggleActive={handleToggleActive}
+              handleUpdateTrackingMode={handleUpdateTrackingMode}
+            />
           ) : (
             /* ================= PASSENGER SYSTEM VIEW ================= */
-            <>
-              {visibleBuses.length === 0 ? (
-                /* FALLBACK HEADER IF NO BUSES ARE LIVE */
-                <div className="bg-red-50 border border-red-200 rounded-2xl p-4 shadow-sm mb-4 text-center">
-                  <svg className="w-8 h-8 text-red-500 mb-2 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <h3 className="font-bold text-red-700 text-sm">No Buses in Transit</h3>
-                  <p className="text-[11px] text-red-400 mt-1">Please refer to the Bus Schedule tab for static departure times.</p>
-                </div>
-              ) : (
-                /* ACTIVE BUS VISUAL SLIDER (PASSENGER CARD) */
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50 mb-4 relative">
-                  <div className="flex items-center justify-center gap-2 text-gray-600 font-medium text-sm mb-3">
-                    <img src="/logo.png" alt="Transit Logo" className="w-8 h-8 object-contain" />
-                    School Bus System
-                  </div>
-                  
-                  <div className="flex justify-between items-center px-2">
-                    <button 
-                      disabled={currentBusIndex === 0}
-                      onClick={() => setCurrentBusIndex(prev => prev - 1)}
-                      className={`p-1 rounded-full ${currentBusIndex === 0 ? "text-gray-200 cursor-not-allowed" : "text-gray-400 hover:bg-gray-100"}`}
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-
-                    <div className="text-center">
-                      <div className="font-bold text-gray-800 text-lg"># {currentBus.plate_number}</div>
-                      <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400 mt-0.5">
-                        Bus {currentBusIndex + 1} of {visibleBuses.length}
-                      </div>
-                    </div>
-
-                    <button 
-                      disabled={currentBusIndex === visibleBuses.length - 1}
-                      onClick={() => setCurrentBusIndex(prev => prev + 1)}
-                      className={`p-1 rounded-full ${currentBusIndex === visibleBuses.length - 1 ? "text-gray-200 cursor-not-allowed" : "text-gray-400 hover:bg-gray-100"}`}
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  </div>
-
-                  <span className="absolute top-4 right-4 flex items-center gap-1.5 text-[11px] font-bold text-gray-600 bg-gray-100 px-2.5 py-1 rounded-full">
-                    <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
-                    </svg>
-                    {currentBus.type}
-                  </span>
-
-                  {/* PASSENGER GPS TRACKING ENABLER */}
-                  {currentBus.tracking_mode === 'auto' && (
-                    <div className="mt-4 pt-3 border-t border-gray-100 flex justify-center">
-                      <button
-                        onClick={() => setTrackingBusId(trackingBusId === currentBus.id ? null : currentBus.id)}
-                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 ${
-                          trackingBusId === currentBus.id
-                            ? "bg-red-100 text-red-600 border border-red-200"
-                            : "bg-sky-100 text-sky-600 border border-sky-200 hover:bg-sky-200"
-                        }`}
-                      >
-                        <span className={`w-2 h-2 rounded-full ${trackingBusId === currentBus.id ? "bg-red-500 animate-ping" : "bg-sky-500"}`}></span>
-                        {trackingBusId === currentBus.id ? "Stop My Tracking" : "I'm on this bus (Share GPS)"}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
+            <HeaderCard 
+              currentBus={currentBus}
+              currentBusIndex={currentBusIndex}
+              visibleBusesLength={visibleBuses.length}
+              setCurrentBusIndex={setCurrentBusIndex}
+              trackingBusId={trackingBusId}
+              handleToggleTracking={setTrackingBusId}
+            />
           )}
 
-          {/* Dynamic Pagination Dots */}
-          {visibleBuses.length > 1 && (
-            <div className="flex justify-center gap-2 mb-6">
-              {visibleBuses.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => setCurrentBusIndex(index)}
-                  className={`h-2 rounded-full transition-all duration-300 ${
-                    index === currentBusIndex ? "w-5 bg-sky-400" : "w-2 bg-gray-200"
-                  }`}
-                />
-              ))}
-            </div>
-          )}
+          {/* Dynamic Timeline Section */}
+          <Timeline 
+            orderedStagesList={orderedStagesList}
+            currentStageIndex={currentStageIndex}
+            activeDirectionCounts={activeDirectionCounts}
+            isCoordinator={isCoordinator}
+            currentBus={currentBus}
+            handleUpdateStage={handleUpdateStage}
+          />
 
-          {/* Route Direction Title Card */}
-          {currentBus && (
-            <div className="bg-white rounded-2xl p-4 shadow-sm text-center font-semibold text-gray-800 mb-6 border border-gray-100/50 relative">
-              {currentBus.direction}
-              {currentBus.is_full && (
-                <div className="mt-1 text-xs text-red-500 font-bold animate-pulse">⚠️ BUS REPORTED FULL</div>
-              )}
-            </div>
-          )}
-
-          {/* 3. Timeline Section (Always visible by default!) */}
-          <div className="flex-1 px-4 relative mb-6">
-            <div className="absolute left-[29px] top-4 bottom-4 w-[2px] bg-gray-200 -z-0"></div>
-
-            <div className="flex flex-col gap-6 relative z-10">
-              {orderedStagesList.map((stage, idx) => {
-                const isPassed = currentBus ? idx < currentStageIndex : false;
-                const isCurrent = currentBus ? idx === currentStageIndex : false;
-                const currentWaitCount = activeDirectionCounts[stage.name] || 0;
-
-                const isManualClickable = isCoordinator && currentBus && currentBus.tracking_mode === 'manual';
-
-                return (
-                  <div 
-                    key={stage.id} 
-                    className={`flex items-start gap-4 transition-all ${
-                      isManualClickable ? "cursor-pointer hover:bg-gray-200/50 p-1.5 -m-1.5 rounded-xl" : ""
-                    }`}
-                    onClick={() => isManualClickable && handleUpdateStage(stage.id)}
-                  >
-                    <div className="flex items-center justify-center w-[30px] h-[30px] mt-0.5">
-                      {isCurrent ? (
-                        <div className="w-4 h-4 rounded-full bg-black ring-4 ring-black/10"></div>
-                      ) : isPassed ? (
-                        <div className="w-3 h-3 rounded-full bg-gray-300"></div>
-                      ) : (
-                        <div className="w-3 h-3 rounded-full bg-[#E5E5E5] border border-gray-300"></div>
-                      )}
-                    </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className={`font-semibold text-base transition-all duration-200 ${
-                          isPassed ? "text-gray-400 line-through" : "text-gray-800"
-                        }`}>
-                          {stage.name}
-                        </h3>
-                        {isCoordinator && isCurrent && (
-                          <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold animate-pulse">ACTIVE</span>
-                        )}
-                      </div>
-                      
-                      {isPassed && stage.time_passed && (
-                        <p className="text-xs italic text-gray-400 font-medium">{stage.time_passed}</p>
-                      )}
-                      
-                      {currentWaitCount > 0 && (
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <span className="text-xs text-blue-500 font-semibold">{currentWaitCount} waiting</span>
-                          {isCoordinator && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping"></span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 4. Action Area */}
-          <div className="mt-auto pt-4 border-t border-gray-100 flex flex-col gap-3">
-            {isCoordinator && currentBus ? (
-              /* Coordinator Bottom Actions */
-              <div className="flex flex-col gap-3 w-full">
-                
-                {/* Toggle Capacity Button */}
-                <button 
-                  onClick={handleToggleFull}
-                  className={`w-full py-4 font-bold rounded-2xl transition active:scale-[0.98] text-center shadow-md ${
-                    currentBus.is_full 
-                      ? "bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/10" 
-                      : "bg-white border border-gray-200 hover:bg-gray-50 text-gray-700"
-                  }`}
-                >
-                  {currentBus.is_full ? "Mark As Available" : "Mark As Full"}
-                </button>
-
-                {/* Clear Waitlist Button */}
-                <button
-                  onClick={handleClearWaitlistManual}
-                  className="w-full py-4 bg-red-500 hover:bg-red-600 active:scale-[0.98] transition text-white font-bold rounded-2xl shadow-md text-center"
-                >
-                  🧹 Clear Active Waitlist
-                </button>
-
-              </div>
-            ) : (
-              /* Student Controls (or Coordinator when no bus online) */
-              <>
-                {userState === "idle" && (
-                  <>
-                    <button className="w-full py-4 px-6 bg-gray-100 hover:bg-gray-200 transition text-gray-800 font-semibold rounded-2xl flex justify-between items-center">
-                      <select 
-                        value={selectedStop} 
-                        onChange={(e) => setSelectedStop(e.target.value)}
-                        className="bg-transparent w-full outline-none text-left appearance-none cursor-pointer"
-                      >
-                        {orderedStagesList.filter((s, idx) => currentBus ? idx >= currentStageIndex : true).map(s => (
-                          <option key={s.id} value={s.name}>{s.name}</option>
-                        ))}
-                      </select>
-                      <svg className="w-5 h-5 text-gray-600 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 15l7-7 7 7" />
-                      </svg>
-                    </button>
-                    <button 
-                      onClick={handleMarkAsWaiting}
-                      className="w-full py-4 bg-[#38BDF8] hover:bg-[#0EA5E9] active:scale-[0.98] transition text-white font-bold rounded-2xl shadow-lg shadow-sky-500/20 text-center"
-                    >
-                      Mark As Waiting
-                    </button>
-                  </>
-                )}
-
-                {userState === "waiting" && (
-                  <>
-                    <button className="w-full py-4 px-6 bg-gray-100 text-gray-800 font-semibold rounded-2xl flex justify-between items-center cursor-not-allowed opacity-75">
-                      <span>{selectedStop}</span>
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                    <div className="flex gap-3">
-                      <button 
-                        onClick={handleCancel}
-                        className="flex-1 py-4 border border-gray-200 hover:bg-gray-50 bg-white transition text-gray-700 font-bold rounded-2xl text-center"
-                      >
-                        Cancel
-                      </button>
-                      <button 
-                        onClick={handleBoarded}
-                        className="flex-1 py-4 bg-[#38BDF8] hover:bg-[#0EA5E9] active:scale-[0.98] transition text-white font-bold rounded-2xl shadow-lg shadow-sky-500/20 text-center"
-                      >
-                        Boarded
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                {userState === "boarded" && (
-                  <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-center">
-                    <p className="text-green-800 font-bold">🎉 Have a safe journey!</p>
-                    <button 
-                      onClick={() => { setUserState("idle"); setWaitingRecordId(null); }} 
-                      className="mt-2 text-xs text-green-600 underline font-semibold hover:text-green-800"
-                    >
-                      Reset status
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+          {/* Bottom Action Area */}
+          <ActionArea 
+            isCoordinator={isCoordinator}
+            currentBus={currentBus}
+            userState={userState}
+            setUserState={setUserState}
+            selectedStop={selectedStop}
+            setSelectedStop={setSelectedStop}
+            orderedStagesList={orderedStagesList}
+            currentStageIndex={currentStageIndex}
+            handleMarkAsWaiting={handleMarkAsWaiting}
+            handleCancel={handleCancel}
+            handleBoarded={handleBoarded}
+            handleClearWaitlistManual={handleClearWaitlistManual}
+            handleToggleFull={handleToggleFull}
+          />
         </>
       ) : (
         /* ==================== TAB 2: STATIC SCHEDULE ==================== */
-        <div className="flex-1 flex flex-col gap-5 overflow-y-auto max-h-[75vh] px-1 pb-4">
-          
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50">
-            <h3 className="font-bold text-gray-800 text-base mb-3 flex items-center gap-2 border-b border-gray-100 pb-2">
-              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              Valley Road Campus ➔ Main Campus
-            </h3>
-            
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs font-bold text-sky-500 uppercase tracking-wider">Mon, Wed, Fri</p>
-                <p className="text-sm font-semibold text-gray-700 mt-0.5">5:00 a.m. | 11:00 a.m. | 4:00 p.m. | 5:00 p.m.</p>
-              </div>
-              
-              <div>
-                <p className="text-xs font-bold text-sky-500 uppercase tracking-wider">Tue, Thu</p>
-                <p className="text-sm font-semibold text-gray-700 mt-0.5">5:00 a.m. | 1:00 p.m. | 4:00 p.m. | 5:00 p.m.</p>
-              </div>
-
-              <div className="pt-1">
-                <p className="text-xs font-bold text-[#EAB308] uppercase tracking-wider">Saturday (Weekend)</p>
-                <p className="text-sm font-semibold text-gray-700 mt-0.5">9:00 a.m.</p>
-              </div>
-            </div>
-
-            <div className="mt-4 bg-amber-50 border border-amber-100 p-3 rounded-xl text-xs text-amber-800 leading-relaxed">
-              <strong>⚠️ Parking Location:</strong> The <strong>5:00 a.m.</strong> weekday bus and the <strong>Saturday</strong> bus park strictly at the <strong>Hope Centre Park</strong>.
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50">
-            <h3 className="font-bold text-gray-800 text-base mb-3 flex items-center gap-2 border-b border-gray-100 pb-2">
-              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              Main Campus ➔ Valley Road Campus
-            </h3>
-            
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs font-bold text-sky-500 uppercase tracking-wider">Mon to Fri (Weekdays)</p>
-                <p className="text-sm font-semibold text-gray-700 mt-0.5">6:20 a.m. | 5:00 p.m.</p>
-              </div>
-
-              <div>
-                <p className="text-xs font-bold text-[#EAB308] uppercase tracking-wider">Sunday (Weekend)</p>
-                <p className="text-sm font-semibold text-gray-700 mt-0.5">3:00 p.m. – 5:00 p.m.</p>
-              </div>
-            </div>
-
-            <div className="mt-4 bg-amber-50 border border-amber-100 p-3 rounded-xl text-xs text-amber-800 leading-relaxed">
-              <strong>⚠️ Parking Location:</strong> Weekday morning buses and Sunday evening buses park at the <strong>Entrance Gate</strong>. Weekday evening buses park at the <strong>Exit Gate</strong>.
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50">
-            <h3 className="font-bold text-gray-800 text-base mb-3 flex items-center gap-2 border-b border-gray-100 pb-2">
-              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-              </svg>
-              Fare & Bus Pass Rules
-            </h3>
-            
-            <div className="space-y-3">
-              <div className="flex justify-between items-center text-sm border-b border-gray-50 pb-1.5">
-                <span className="text-gray-600">Valley Road ➔ Athi River</span>
-                <span className="font-bold text-gray-800">200 Ksh</span>
-              </div>
-              <div className="flex justify-between items-center text-sm border-b border-gray-50 pb-1.5">
-                <span className="text-gray-600">Athi ➔ Past Syokimau (to VR)</span>
-                <span className="font-bold text-gray-800">200 Ksh</span>
-              </div>
-              <div className="flex justify-between items-center text-sm pb-1">
-                <span className="text-gray-600">Athi ➔ Syokimau (or before)</span>
-                <span className="font-bold text-gray-800">150 Ksh</span>
-              </div>
-            </div>
-
-            <div className="mt-4 bg-blue-50 border border-blue-100 p-3 rounded-xl text-xs text-blue-800 leading-relaxed">
-              <strong>📢 Bus Pass Validity:</strong> Bus Passes are strictly valid **ONLY** on the <strong>6:30 a.m.</strong> bus departing from Valley Road and the <strong>5:00 p.m.</strong> bus departing from Athi River.
-            </div>
-          </div>
-
-        </div>
+        <ScheduleTab />
       )}
 
       {/* Subtle Role Switch Footer */}
