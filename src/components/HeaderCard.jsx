@@ -8,6 +8,28 @@ export default function HeaderCard({
   trackingBusId, 
   handleToggleTracking 
 }) {
+
+  const sendSystemNotification = (title, body) => {
+    if (!("Notification" in window)) return;
+
+    if (Notification.permission === "granted") {
+      // Mobile Chrome/Safari Fallback: Send notification through the Service Worker
+      if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then((registration) => {
+          registration.showNotification(title, {
+            body: body,
+            icon: '/logo.png', // Uses your custom bus logo
+            badge: '/logo.png',
+            vibrate: [200, 100, 200], // Vibrates the phone
+          });
+        });
+      } else {
+        // Desktop Fallback
+        new Notification(title, { body, icon: '/logo.png' });
+      }
+    }
+  };
+
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   if (!currentBus) return null;
