@@ -18,7 +18,9 @@ export default function ActionArea({
   return (
     <div className="mt-auto pt-4 border-t border-gray-100 flex flex-col gap-3">
       {isCoordinator && currentBus ? (
+        /* Coordinator Bottom Actions */
         <div className="flex flex-col gap-3 w-full">
+          {/* Clear Waitlist Button */}
           <button
             onClick={handleClearWaitlistManual}
             className="w-full py-4 bg-red-500 hover:bg-red-600 active:scale-[0.98] transition text-white font-bold rounded-2xl shadow-md text-center text-sm"
@@ -26,18 +28,20 @@ export default function ActionArea({
             🧹 Clear Active Waitlist
           </button>
 
+          {/* Toggle Capacity Button */}
           <button 
             onClick={handleToggleFull}
             className={`w-full py-4 font-bold rounded-2xl transition active:scale-[0.98] text-center shadow-md text-sm ${
-              currentBus.is_full 
+              currentBus?.is_full 
                 ? "bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/10" 
                 : "bg-white border border-gray-200 hover:bg-gray-50 text-gray-700"
             }`}
           >
-            {currentBus.is_full ? "Mark As Available" : "Mark As Full"}
+            {currentBus?.is_full ? "Mark As Available" : "Mark As Full"}
           </button>
         </div>
       ) : (
+        /* Student Controls */
         <>
           {userState === "idle" && (
             <>

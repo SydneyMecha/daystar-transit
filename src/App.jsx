@@ -4,14 +4,13 @@ import { supabase } from './supabaseClient';
 // Import Modular Components
 import AnnouncementBanner from './components/AnnouncementBanner';
 import HeaderCard from './components/HeaderCard';
-import CoordinatorPanel from './components/CoordinatorPanel';
 import Timeline from './components/Timeline';
 import ActionArea from './components/ActionArea';
 import ScheduleTab from './components/ScheduleTab';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
-  const [buses, setBuses] = useState([]);
+  const [sessions, setSessions] = useState([]);
   const [currentBusIndex, setCurrentBusIndex] = useState(0);
   const [stages, setStages] = useState([]);
   const [waitCounts, setWaitCounts] = useState({});
@@ -19,7 +18,6 @@ export default function App() {
   
   // App Navigation & Roles
   const [activeTab, setActiveTab] = useState("tracker");
-  const [isCoordinator, setIsCoordinator] = useState(false);
 
   // Student interaction states (Safely parsed from LocalStorage strings)
   const [selectedStop, setSelectedStop] = useState(() => {
@@ -38,31 +36,56 @@ export default function App() {
   });
 
   // GPS Crowdsourced Tracker State
-  const [trackingBusId, setTrackingBusId] = useState(() => {
-    const id = localStorage.getItem('transit_tracking_bus_id');
-    return (id && id !== 'null' && id !== 'undefined') ? parseInt(id) : null;
+  const [trackingSessionId, setTrackingSessionId] = useState(() => {
+    const id = localStorage.getItem('transit_tracking_session_id');
+    return (id && id !== 'null' && id !== 'undefined') ? id : null;
   });
   const watchIdRef = useRef(null);
 
-  // Filter and SORT buses (Buses closest to Athi River are placed first)
-  const visibleBuses = isCoordinator 
-    ? buses 
-    : buses.filter(b => b.is_active).sort((a, b) => {
-        const stageA = stages.find(s => s.id === a.current_stage_id);
-        const stageB = stages.find(s => s.id === b.current_stage_id);
-        if (!stageA || !stageB) return 0;
+  // CLUSTERING ALGORITHM: Group active student tracking sessions by (bus_type + current_stage_id)
+  const getMergedActiveBuses = () => {
+    const nowStr = new Date(Date.now() - 120000).toISOString(); // 2 minutes stale timeout
+    const active = sessions.filter(s => s.updated_at >= nowStr);
 
-        const remainingA = a.direction.startsWith("Valley Road") 
-          ? (21 - stageA.sequence_order) 
-          : (stageA.sequence_order - 1);
+    const merged = [];
+    active.forEach(session => {
+      // Find if we already have a bus card of the same brand at the same stage
+      const existing = merged.find(b => b.bus_type === session.bus_type && b.current_stage_id === session.current_stage_id);
+      
+      if (existing) {
+        // Merge the passing timestamps (JSONB maps) so they complete each other
+        existing.passed_stages = { ...existing.passed_stages, ...session.passed_stages };
+      } else {
+        merged.push({
+          id: session.id, // Primary session ID
+          bus_type: session.bus_type,
+          direction: session.direction,
+          current_stage_id: session.current_stage_id,
+          passed_stages: session.passed_stages,
+          is_full: session.is_full
+        });
+      }
+    });
 
-        const remainingB = b.direction.startsWith("Valley Road") 
-          ? (21 - stageB.sequence_order) 
-          : (stageB.sequence_order - 1);
+    // SORT CARDS: Closest to Athi River (highest index in route direction) appears first
+    return merged.sort((a, b) => {
+      const stageA = stages.find(s => s.id === a.current_stage_id);
+      const stageB = stages.find(s => s.id === b.current_stage_id);
+      if (!stageA || !stageB) return 0;
+      
+      const isReverseA = a.direction.startsWith("Athi River");
+      const orderedA = isReverseA ? [...stages].reverse() : stages;
+      const idxA = orderedA.findIndex(s => s.id === a.current_stage_id);
 
-        return remainingA - remainingB; // Sort closest first
-      });
+      const isReverseB = b.direction.startsWith("Athi River");
+      const orderedB = isReverseB ? [...stages].reverse() : stages;
+      const idxB = orderedB.findIndex(s => s.id === b.current_stage_id);
 
+      return idxB - idxA; // Closest first
+    });
+  };
+
+  const visibleBuses = getMergedActiveBuses();
   const currentBus = visibleBuses[currentBusIndex] || null;
 
   useEffect(() => {
@@ -74,32 +97,20 @@ export default function App() {
   useEffect(() => {
     fetchInitialData();
 
-    // Subscribe to DB updates in real-time
+    // Subscribe to real-time updates
     const dbSubscription = supabase
       .channel('schema-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'buses' }, () => {
-        fetchBusesData();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tracking_sessions' }, () => {
+        fetchSessionsData();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stages' }, () => {
         fetchStagesData();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'wait_list' }, () => {
         fetchWaitCounts();
-      })  
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, (payload) => {
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
         fetchAnnouncement();
-
-        const isNewActivePush = payload.eventType === 'INSERT' && payload.new.is_active && payload.new.send_push;
-
-        const isPushJustToggledOn = 
-          payload.eventType === 'UPDATE' && 
-          payload.new.is_active && 
-          payload.new.send_push && 
-          payload.old?.send_push === false; // must have actually flipped, not just any update
-
-        if (isNewActivePush || isPushJustToggledOn) {
-          sendSystemNotification("Daystar Transit Alert", payload.new.message);
-        }
       })
       .subscribe();
 
@@ -109,32 +120,19 @@ export default function App() {
     };
   }, []);
 
-  // Handle background GPS loop when "Track this Bus" is active
+  // Handle GPS watch positioning on tracking state changes
   useEffect(() => {
-    if (trackingBusId) {
-      localStorage.setItem('transit_tracking_bus_id', trackingBusId);
-      startGpsTracking(trackingBusId);
+    if (trackingSessionId) {
+      localStorage.setItem('transit_tracking_session_id', trackingSessionId);
+      startGpsTracking(trackingSessionId);
     } else {
-      localStorage.removeItem('transit_tracking_bus_id');
+      localStorage.removeItem('transit_tracking_session_id');
       if (watchIdRef.current) {
         navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
       }
     }
-  }, [trackingBusId, buses, stages]);
-
-  useEffect(() => {
-    if (userState) localStorage.setItem('transit_user_state', userState);
-    if (waitingRecordId) localStorage.setItem('transit_waiting_record_id', waitingRecordId);
-    else localStorage.removeItem('transit_waiting_record_id');
-    if (selectedStop) localStorage.setItem('transit_selected_stop', selectedStop);
-  }, [userState, waitingRecordId, selectedStop]);
-
-  useEffect(() => {
-    if (waitingRecordId) {
-      verifyUserWaitingStatus();
-    }
-  }, [waitingRecordId]);
+  }, [trackingSessionId, sessions, stages]);
 
   const verifyUserWaitingStatus = async () => {
     const { data, error } = await supabase
@@ -151,9 +149,9 @@ export default function App() {
 
   const fetchInitialData = async () => {
     setLoading(true);
-    await clearOldWaitlistRecords(); // Perform 9am / 7pm cleanup first
+    await clearOldWaitlistRecords(); // Perform shift-based cleanup
     await Promise.all([
-      fetchBusesData(),
+      fetchSessionsData(),
       fetchStagesData(),
       fetchWaitCounts(),
       fetchAnnouncement()
@@ -179,21 +177,16 @@ export default function App() {
     const currentHour = now.getHours();
     
     let cutoffTime = null;
-    
     if (currentHour >= 9 && currentHour < 19) {
-      // 1. Daytime Shift (9:00 AM to 6:59 PM). Clear anything created before 9:00 AM TODAY.
       const boundaryDate = new Date();
-      boundaryDate.setHours(9, 0, 0, 0); // 9:00 AM Today
+      boundaryDate.setHours(9, 0, 0, 0); 
       cutoffTime = boundaryDate.toISOString();
     } else {
-      // 2. Nighttime Shift (7:00 PM to 8:59 AM). Clear anything created before 7:00 PM of the shift.
       const boundaryDate = new Date();
       if (currentHour < 9) {
-        // If it is currently early morning today (e.g. 4:46 AM),
-        // we want to clear anything created before 7:00 PM YESTERDAY.
         boundaryDate.setDate(boundaryDate.getDate() - 1);
       }
-      boundaryDate.setHours(19, 0, 0, 0); // 7:00 PM (Yesterday or Today depending on current hour)
+      boundaryDate.setHours(19, 0, 0, 0); 
       cutoffTime = boundaryDate.toISOString();
     }
 
@@ -206,14 +199,13 @@ export default function App() {
     }
   };
 
-  const fetchBusesData = async () => {
+  const fetchSessionsData = async () => {
     const { data, error } = await supabase
-      .from('buses')
-      .select('*')
-      .order('id', { ascending: true });
+      .from('tracking_sessions')
+      .select('*');
     
-    if (error) console.error("Error fetching buses:", error);
-    else setBuses(data);
+    if (error) console.error("Error fetching tracking sessions:", error);
+    else setSessions(data || []);
   };
 
   const fetchStagesData = async () => {
@@ -246,70 +238,35 @@ export default function App() {
     setWaitCounts(counts);
   };
 
-  // SYSTEM NOTIFICATIONS TRIGGER
+  // SYSTEM NOTIFICATIONS
   const sendSystemNotification = (title, body) => {
     if (!("Notification" in window)) return;
-
     if (Notification.permission === "granted") {
       new Notification(title, { body, icon: "/logo.png" });
-    } else if (Notification.permission !== "denied") {
-      Notification.requestPermission().then(permission => {
-        if (permission === "granted") {
-          new Notification(title, { body, icon: "/logo.png" });
-        }
-      });
     }
   };
 
-  // AUTOMATED GPS TRACKING & GEOFENCING WITH ANTI-SPOOFING
-  const startGpsTracking = (busId) => {
+  // AUTOMATED GPS TRACKING & GEOFENCING
+  const startGpsTracking = (sessionId) => {
     if (watchIdRef.current) return;
 
     if (!navigator.geolocation) {
       alert("Geolocation is not supported by this browser.");
-      setTrackingBusId(null);
+      setTrackingSessionId(null);
       return;
     }
 
-    // Trigger Notification permission prompt
-    if ("Notification" in window && Notification.permission !== "granted") {
-      Notification.requestPermission();
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        
-        // 1. Evaluate distance verification (Anti-spoofing)
-        const isEligible = evaluateTrackEligibility(busId, latitude, longitude);
-        if (!isEligible) {
-          setTrackingBusId(null);
-          return;
-        }
-
-        // 2. Start watching position if eligible
-        watchIdRef.current = navigator.geolocation.watchPosition(
-          (pos) => {
-            const { latitude: lat, longitude: lng } = pos.coords;
-            evaluateGeofenceArrival(busId, lat, lng);
-          },
-          (err) => {
-            console.error("Tracking watch error:", err);
-            sendSystemNotification("Transit Tracker Error", "Location tracking lost. Please keep your browser open.");
-          },
-          { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
-        );
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        evaluateGeofenceArrival(sessionId, lat, lng);
       },
       (err) => {
-        alert("Permission Denied: Please enable Location Permissions in your phone settings to track this bus.");
-        setTrackingBusId(null);
-      }
+        console.error("Tracking watch error:", err);
+        sendSystemNotification("Transit Tracker Error", "Location tracking lost. Please keep your browser open.");
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
     );
-  };
-
-  // Anti-Spoofing: Verifies user is physically close to the last reported bus stage
-  const evaluateTrackEligibility = (busId, userLat, userLng) => {
-    return true; // Bypass active. Anyone can start tracking.
   };
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -327,13 +284,13 @@ export default function App() {
     return R * c; // Distance in meters
   };
 
-  const evaluateGeofenceArrival = async (busId, userLat, userLng) => {
-    const targetBus = buses.find(b => b.id === busId);
-    if (!targetBus || targetBus.tracking_mode !== 'auto') return;
+  const evaluateGeofenceArrival = async (sessionId, userLat, userLng) => {
+    const targetSession = sessions.find(s => s.id === sessionId);
+    if (!targetSession) return;
 
-    const isReverse = targetBus.direction.startsWith("Athi River");
+    const isReverse = targetSession.direction.startsWith("Athi River");
     const ordered = isReverse ? [...stages].reverse() : stages;
-    const currentIdx = ordered.findIndex(s => s.id === targetBus.current_stage_id);
+    const currentIdx = ordered.findIndex(s => s.id === targetSession.current_stage_id);
 
     for (let i = currentIdx + 1; i < ordered.length; i++) {
       const stage = ordered[i];
@@ -345,24 +302,25 @@ export default function App() {
         const now = new Date();
         const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase();
 
-        // 1. Build updated bus JSONB object independently
-        const passedStages = { ...targetBus.passed_stages };
+        const passedStages = { ...targetSession.passed_stages };
         passedStages[stage.id] = timeString;
 
-        // Optimistically update database
-        await supabase.from('buses').update({ 
-          current_stage_id: stage.id,
-          passed_stages: passedStages
-        }).eq('id', busId);
+        // Push update of student's active tracking session to database
+        await supabase
+          .from('tracking_sessions')
+          .update({ 
+            current_stage_id: stage.id,
+            passed_stages: passedStages,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', sessionId);
 
-        // Auto-stop tracking if the bus reaches the final destination
         if (i === ordered.length - 1) {
-          // Clear watch FIRST to prevent duplicate alerts
           if (watchIdRef.current) {
             navigator.geolocation.clearWatch(watchIdRef.current);
             watchIdRef.current = null;
           }
-          setTrackingBusId(null);
+          setTrackingSessionId(null);
           sendSystemNotification("Arrived!", "🎉 You have arrived at your destination! Tracking has stopped.");
           alert("🎉 You have arrived at your destination! Tracking has stopped.");
         }
@@ -373,10 +331,11 @@ export default function App() {
 
   // STUDENT ACTIONS
   const handleMarkAsWaiting = async () => {
+    // Request notification permissions directly on student click!
     if ("Notification" in window && Notification.permission === "default") {
-      Notification.permission = await Notification.requestPermission();
+      await Notification.requestPermission();
     }
-    
+
     const direction = currentBus ? currentBus.direction : 'Valley Road ➔ Athi River';
 
     const { data, error } = await supabase
@@ -423,100 +382,46 @@ export default function App() {
     }
   };
 
-  // COORDINATOR ACTIONS (Optimistic state updates fully implemented)
-  const handleUpdateStage = async (stageId) => {
-    if (!currentBus) return;
-    if (currentBus.tracking_mode === 'auto') return;
+  // NEW DYNAMIC SESSIONS CONTROLLER (P2P Activation)
+  const handleStartTrackingSession = async (busType, direction) => {
+    // Request notification permissions directly on click
+    if ("Notification" in window && Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
 
-    const now = new Date();
-    const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase();
+    const defaultStageId = direction.startsWith("Valley Road") ? 1 : stages.length;
 
-    // 1. Build local isolated passed times JSONB map
-    const passedStages = { ...currentBus.passed_stages };
-    passedStages[stageId] = timeString;
+    const { data, error } = await supabase
+      .from('tracking_sessions')
+      .insert([{
+        bus_type: busType,
+        direction: direction,
+        current_stage_id: defaultStageId,
+        passed_stages: {},
+        is_full: false
+      }])
+      .select()
+      .single();
 
-    // OPTIMISTICALLY update buses locally for zero-lag response
-    setBuses(prevBuses => prevBuses.map(b => 
-      b.id === currentBus.id ? { ...b, current_stage_id: stageId, passed_stages: passedStages } : b
-    ));
-
-    const { error: busError } = await supabase
-      .from('buses')
-      .update({ 
-        current_stage_id: stageId,
-        passed_stages: passedStages
-      })
-      .eq('id', currentBus.id);
-
-    if (busError) console.error("Error moving bus:", busError);
+    if (error) {
+      console.error("Error starting tracking session:", error);
+    } else {
+      setTrackingSessionId(data.id);
+    }
   };
 
-  const handleToggleFull = async () => {
+  const handleStopTrackingSession = () => {
+    setTrackingSessionId(null);
+  };
+
+  const handleToggleFullSession = async () => {
     if (!currentBus) return;
-
-    setBuses(prevBuses => prevBuses.map(b => 
-      b.id === currentBus.id ? { ...b, is_full: !b.is_full } : b
-    ));
-
     const { error } = await supabase
-      .from('buses')
+      .from('tracking_sessions')
       .update({ is_full: !currentBus.is_full })
       .eq('id', currentBus.id);
 
     if (error) console.error("Error toggling capacity status:", error);
-  };
-
-  const handleUpdateDirection = async (newDirection) => {
-    if (!currentBus) return;
-    const defaultStageId = newDirection.startsWith("Valley Road") ? 1 : stages.length;
-
-    setBuses(prevBuses => prevBuses.map(b => 
-      b.id === currentBus.id ? { ...b, direction: newDirection, current_stage_id: defaultStageId, is_full: false, passed_stages: {} } : b
-    ));
-
-    const { error: busError } = await supabase
-      .from('buses')
-      .update({ 
-        direction: newDirection,
-        current_stage_id: defaultStageId,
-        is_full: false,
-        passed_stages: {} // Reset JSONB timeline for new trip
-      })
-      .eq('id', currentBus.id);
-
-    if (busError) {
-      console.error("Error updating direction:", busError);
-    }
-  };
-
-  const handleToggleActive = async () => {
-    if (!currentBus) return;
-
-    setBuses(prevBuses => prevBuses.map(b => 
-      b.id === currentBus.id ? { ...b, is_active: !b.is_active } : b
-    ));
-
-    const { error } = await supabase
-      .from('buses')
-      .update({ is_active: !currentBus.is_active })
-      .eq('id', currentBus.id);
-
-    if (error) console.error("Error toggling active status:", error);
-  };
-
-  const handleUpdateTrackingMode = async (mode) => {
-    if (!currentBus) return;
-
-    setBuses(prevBuses => prevBuses.map(b => 
-      b.id === currentBus.id ? { ...b, tracking_mode: mode } : b
-    ));
-
-    const { error } = await supabase
-      .from('buses')
-      .update({ tracking_mode: mode })
-      .eq('id', currentBus.id);
-
-    if (error) console.error("Error updating tracking mode:", error);
   };
 
   const handleClearWaitlistManual = async () => {
@@ -561,27 +466,10 @@ export default function App() {
   return (
     <div className="min-h-screen max-w-md mx-auto bg-[#F7F7F7] flex flex-col justify-between p-4 shadow-md pb-8">
       
-      {/* Role Toggle Header Indicator */}
+      {/* Role Toggle Header Indicator (Quietly left for testing manual triggers if ever needed) */}
       <div className="text-center mb-3">
         <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500 bg-gray-200/50 px-3 py-1 rounded-full flex items-center justify-center gap-1.5 w-max mx-auto">
-          {isCoordinator ? (
-            <>
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              Coordinator Mode
-            </>
-          ) : (
-            <>
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path d="M12 14l9-5-9-5-9 5 9 5z" />
-                <path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
-              </svg>
-              Passenger Mode
-            </>
-          )}
+          🎓 Passenger Mode
         </span>
       </div>
 
@@ -619,58 +507,29 @@ export default function App() {
       {activeTab === "tracker" ? (
         /* ==================== TAB 1: LIVE TRACKER ==================== */
         <>
-          {isCoordinator ? (
-            /* ================= COORDINATOR CONTROL PANEL ================= */
-            <CoordinatorPanel 
-              buses={buses}
-              currentBusIndex={currentBusIndex}
-              setCurrentBusIndex={setCurrentBusIndex}
-              currentBus={currentBus}
-              handleUpdateDirection={handleUpdateDirection}
-              handleToggleActive={handleToggleActive}
-              handleUpdateTrackingMode={handleUpdateTrackingMode}
-            />
-          ) : (
-            /* ================= PASSENGER SYSTEM VIEW ================= */
-            <>
-              {visibleBuses.length === 0 ? (
-                /* PLACE THE BANNER HERE */
-                <div className="bg-red-50 border border-red-200 rounded-2xl p-4 shadow-sm mb-5 text-center">
-                  <svg className="w-8 h-8 text-red-500 mb-2 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <h3 className="font-bold text-red-700 text-sm">No Buses in Transit</h3>
-                  <p className="text-[11px] text-red-400 mt-1 leading-relaxed">
-                    There are currently no active buses reported on the road. Please switch to the <strong>Bus Schedule</strong> tab to check normal departure times.
-                  </p>
-                </div>
-              ) : (
-                /* This renders your active sliding bus card */
-                <HeaderCard 
-                  currentBus={currentBus}
-                  currentBusIndex={currentBusIndex}
-                  visibleBusesLength={visibleBuses.length}
-                  setCurrentBusIndex={setCurrentBusIndex}
-                  trackingBusId={trackingBusId}
-                  handleToggleTracking={setTrackingBusId}
-                />
-              )}
-            </>
-          )}
+          <HeaderCard 
+            currentBus={currentBus}
+            currentBusIndex={currentBusIndex}
+            visibleBusesLength={visibleBuses.length}
+            setCurrentBusIndex={setCurrentBusIndex}
+            trackingBusId={trackingSessionId}
+            onOpenTrackingModal={() => handleStartTrackingSession("Daystar Bus", "Valley Road ➔ Athi River")} // Defaults to toggle on click
+            handleStopTracking={handleStopTrackingSession}
+          />
 
-          {/* Dynamic Timeline Section (Stays visible below the warning!) */}
+          {/* Dynamic Timeline Section */}
           <Timeline 
             orderedStagesList={orderedStagesList}
             currentStageIndex={currentStageIndex}
             activeDirectionCounts={activeDirectionCounts}
-            isCoordinator={isCoordinator}
+            isCoordinator={false}
             currentBus={currentBus}
-            handleUpdateStage={handleUpdateStage}
+            handleUpdateStage={() => {}} // Direct updates handled strictly by client GPS tracking
           />
 
           {/* Bottom Action Area */}
           <ActionArea 
-            isCoordinator={isCoordinator}
+            isCoordinator={false}
             currentBus={currentBus}
             userState={userState}
             setUserState={setUserState}
@@ -681,24 +540,14 @@ export default function App() {
             handleMarkAsWaiting={handleMarkAsWaiting}
             handleCancel={handleCancel}
             handleBoarded={handleBoarded}
-            handleClearWaitlistManual={handleClearWaitlistManual}
-            handleToggleFull={handleToggleFull}
+            handleClearWaitlistManual={() => {}}
+            handleToggleFull={handleToggleFullSession}
           />
         </>
       ) : (
         /* ==================== TAB 2: STATIC SCHEDULE ==================== */
         <ScheduleTab />
       )}
-
-      {/* Subtle Role Switch Footer */}
-      <div className="text-center mt-6">
-        <button 
-          onClick={() => setIsCoordinator(!isCoordinator)}
-          className="text-xs text-gray-400 underline hover:text-gray-600 transition font-semibold"
-        >
-          {isCoordinator ? "Exit Coordinator Panel" : "Switch to Coordinator Portal"}
-        </button>
-      </div>
     </div>
   );
 }

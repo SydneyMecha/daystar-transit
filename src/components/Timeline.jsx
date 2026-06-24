@@ -4,9 +4,7 @@ export default function Timeline({
   orderedStagesList, 
   currentStageIndex, 
   activeDirectionCounts, 
-  isCoordinator, 
-  currentBus, 
-  handleUpdateStage 
+  currentBus 
 }) {
   return (
     <div className="flex-1 px-4 relative mb-6">
@@ -16,20 +14,13 @@ export default function Timeline({
         {orderedStagesList.map((stage, idx) => {
           const isPassed = currentBus ? idx < currentStageIndex : false;
           const isCurrent = currentBus ? idx === currentStageIndex : false;
-          const currentWaitCount = activeDirectionCounts[stage.name] || 0;
-          const isManualClickable = isCoordinator && currentBus && currentBus.tracking_mode === 'manual';
+          const hasStudentsWaiting = activeDirectionCounts[stage.name] > 0;
 
-          // Extract passing time independently from the specific bus JSONB
-          const timePassed = currentBus?.passed_stages?.[stage.id] || null;
+          // Extracts passing time independently from the specific active bus JSONB mapping
+          const timePassed = currentBus?.passed_stages?.[String(stage.id)] || null;
 
           return (
-            <div 
-              key={stage.id} 
-              className={`flex items-start gap-4 transition-all ${
-                isManualClickable ? "cursor-pointer hover:bg-gray-200/50 p-1.5 -m-1.5 rounded-xl" : ""
-              }`}
-              onClick={() => isManualClickable && handleUpdateStage(stage.id)}
-            >
+            <div key={stage.id} className="flex items-start gap-4">
               <div className="flex items-center justify-center w-[30px] h-[30px] mt-0.5">
                 {isCurrent ? (
                   <div className="w-4 h-4 rounded-full bg-black ring-4 ring-black/10"></div>
@@ -56,12 +47,11 @@ export default function Timeline({
                   <p className="text-xs italic text-gray-400 font-medium">{timePassed}</p>
                 )}
                 
-                {currentWaitCount > 0 && (
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <span className="text-xs text-blue-500 font-semibold">{currentWaitCount} waiting</span>
-                    {isCoordinator && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping"></span>
-                    )}
+                {/* SECURITY IMPROVEMENT: Shows generic "Waiting" status instead of precise student counts */}
+                {!isPassed && hasStudentsWaiting && (
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[10px] bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full font-bold">Waiting</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping"></span>
                   </div>
                 )}
               </div>
