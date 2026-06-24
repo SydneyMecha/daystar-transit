@@ -8,6 +8,15 @@ import Timeline from './components/Timeline';
 import ActionArea from './components/ActionArea';
 import ScheduleTab from './components/ScheduleTab';
 
+// Cross-compatible mobile UUID generator
+const generateSafeUUID = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [buses, setBuses] = useState([]);
@@ -23,7 +32,19 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("tracker");
   const [isCoordinator, setIsCoordinator] = useState(false);
 
-  // Student interaction states (Safely parsed from LocalStorage strings)
+  // DEVICE-LOCKED SESSION ID (With strict self-healing structure to wipe corrupted history)
+  const [myClientId] = useState(() => {
+    const savedId = localStorage.getItem('transit_client_id');
+    // STRICT VALIDATION: Must exist, must not be null/undefined, and must be exactly 36 characters (UUID standard)
+    if (savedId && savedId !== 'null' && savedId !== 'undefined' && savedId.length === 36) {
+      return savedId;
+    }
+    const newId = generateSafeUUID();
+    localStorage.setItem('transit_client_id', newId);
+    return newId;
+  });
+
+  // Student interaction states
   const [selectedStop, setSelectedStop] = useState(() => {
     const stop = localStorage.getItem('transit_selected_stop');
     return (stop && stop !== 'null' && stop !== 'undefined') ? stop : "Valley Road Campus";
@@ -39,7 +60,7 @@ export default function App() {
     return (id && id !== 'null' && id !== 'undefined') ? id : null;
   });
 
-  // GPS Crowdsourced Tracker State (UUID string format)
+  // GPS Crowdsourced Tracker State
   const [trackingBusId, setTrackingBusId] = useState(() => {
     const id = localStorage.getItem('transit_tracking_bus_id');
     return (id && id !== 'null' && id !== 'undefined') ? id : null;
@@ -287,7 +308,6 @@ export default function App() {
   const pullCurrentLocation = () => {
     if (!navigator.geolocation) return;
 
-    // FIX 2: Increased timeout from 5s to 15s to prevent indoor cellular GPS timeouts
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude, accuracy } = position.coords;
@@ -302,7 +322,7 @@ export default function App() {
         console.error("GPS pulling error:", err);
         setLiveCoords(prev => ({ ...prev, status: `Error: ${err.message}` }));
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: true, maximumAge: 0 } // Bypass browser GPS cache for raw, fresh coordinates
     );
   };
 
@@ -322,15 +342,12 @@ export default function App() {
   };
 
   const evaluateGeofenceArrival = async (sessionId, userLat, userLng) => {
-    // Look up our exact physical device row in the active database
     const targetSession = buses.find(s => s.id === sessionId);
     if (!targetSession) return;
 
     const isReverse = targetSession.direction.startsWith("Athi River");
     const ordered = isReverse ? [...stages].reverse() : stages;
-    
-    // FIX 1: Wrap id comparisons in Number() to prevent database String-to-Number equality blocks
-    const currentIdx = ordered.findIndex(s => Number(s.id) === Number(targetSession.current_stage_id));
+    const currentIdx = ordered.findIndex(s => s.id === targetSession.current_stage_id);
 
     for (let i = currentIdx + 1; i < ordered.length; i++) {
       const stage = ordered[i];
@@ -346,7 +363,7 @@ export default function App() {
         passedStages[stage.id] = timeString;
 
         // Push update of our specific device tracking session to database
-        await supabase
+        const { error } = await supabase
           .from('tracking_sessions')
           .update({ 
             current_stage_id: stage.id,
@@ -354,6 +371,10 @@ export default function App() {
             updated_at: new Date().toISOString()
           })
           .eq('id', sessionId);
+
+        if (error) {
+          console.error("Geofence update error:", error);
+        }
 
         if (i === ordered.length - 1) {
           stopGpsTrackingInterval();
@@ -386,8 +407,10 @@ export default function App() {
       .select()
       .single();
 
-    if (error) console.error("Error joining queue:", error);
-    else {
+    if (error) {
+      console.error("Error joining queue:", error);
+      alert("Error joining queue: " + error.message);
+    } else {
       setWaitingRecordId(data.id);
       setUserState("waiting");
     }
@@ -420,7 +443,7 @@ export default function App() {
     }
   };
 
-  // NEW DYNAMIC SESSIONS CONTROLLER (P2P Activation)
+  // NEW DYNAMIC SESSIONS CONTROLLER
   const handleStartTrackingSession = async (busType, direction) => {
     if ("Notification" in window && Notification.permission === "default") {
       await Notification.requestPermission();
@@ -444,6 +467,7 @@ export default function App() {
 
     if (error) {
       console.error("Error starting tracking session:", error);
+      alert("Database Write Error: " + error.message); // VISUAL ALERT POPUP FOR MOBILE DEBUGGING
     } else {
       setTrackingBusId(data.id); 
       setTrackingBusType(data.bus_type);
@@ -451,13 +475,17 @@ export default function App() {
   };
 
   const handleStopTrackingSession = async () => {
-    await supabase
+    const { error } = await supabase
       .from('tracking_sessions')
       .delete()
       .eq('id', myClientId);
 
-    setTrackingBusId(null); 
-    setTrackingBusType(null);
+    if (error) {
+      console.error("Error stopping session:", error);
+    } else {
+      setTrackingBusId(null); 
+      setTrackingBusType(null);
+    }
   };
 
   const handleToggleFullSession = async () => {
@@ -596,7 +624,7 @@ export default function App() {
         <ScheduleTab />
       )}
 
-      {/* Subtle On-Screen GPS Staging Debugger (Visible only during staging runs) */}
+      {/* Subtle On-Screen GPS Staging Debugger */}
       {trackingBusId && (
         <div className="mt-4 bg-gray-800 text-white rounded-xl p-3 text-[10px] font-mono text-center opacity-75 shadow-md">
           🟢 GPS Tracker: {liveCoords.status} <br/>
