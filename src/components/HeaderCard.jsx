@@ -85,7 +85,7 @@ export default function HeaderCard({
               }`}
             >
               <span className={`w-2 h-2 rounded-full ${isTrackingThisBus ? "bg-red-500 animate-ping" : "bg-sky-500"}`}></span>
-              {isTrackingThisBus ? "Stop Sharing My GPS" : "I'm on this bus (Share GPS)"}
+              {isTrackingThisBus ? "Stop Sharing My GPS" : "I'm on board (Share GPS)"}
             </button>
           </div>
         </>

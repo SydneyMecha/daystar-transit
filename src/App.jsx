@@ -10,7 +10,7 @@ import ScheduleTab from './components/ScheduleTab';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
-  const [sessions, setSessions] = useState([]);
+  const [buses, setBuses] = useState([]);
   const [currentBusIndex, setCurrentBusIndex] = useState(0);
   const [stages, setStages] = useState([]);
   const [waitCounts, setWaitCounts] = useState({});
@@ -18,6 +18,7 @@ export default function App() {
   
   // App Navigation & Roles
   const [activeTab, setActiveTab] = useState("tracker");
+  const [isCoordinator, setIsCoordinator] = useState(false);
 
   // Student interaction states (Safely parsed from LocalStorage strings)
   const [selectedStop, setSelectedStop] = useState(() => {
@@ -35,9 +36,9 @@ export default function App() {
     return (id && id !== 'null' && id !== 'undefined') ? id : null;
   });
 
-  // GPS Crowdsourced Tracker State
-  const [trackingSessionId, setTrackingSessionId] = useState(() => {
-    const id = localStorage.getItem('transit_tracking_session_id');
+  // GPS Crowdsourced Tracker State (FIXED: Removed parseInt to support UUID strings safely)
+  const [trackingBusId, setTrackingBusId] = useState(() => {
+    const id = localStorage.getItem('transit_tracking_bus_id');
     return (id && id !== 'null' && id !== 'undefined') ? id : null;
   });
   const watchIdRef = useRef(null);
@@ -45,15 +46,13 @@ export default function App() {
   // CLUSTERING ALGORITHM: Group active student tracking sessions by (bus_type + current_stage_id)
   const getMergedActiveBuses = () => {
     const nowStr = new Date(Date.now() - 120000).toISOString(); // 2 minutes stale timeout
-    const active = sessions.filter(s => s.updated_at >= nowStr);
+    const active = buses.filter(s => s.updated_at >= nowStr);
 
     const merged = [];
     active.forEach(session => {
-      // Find if we already have a bus card of the same brand at the same stage
       const existing = merged.find(b => b.bus_type === session.bus_type && b.current_stage_id === session.current_stage_id);
       
       if (existing) {
-        // Merge the passing timestamps (JSONB maps) so they complete each other
         existing.passed_stages = { ...existing.passed_stages, ...session.passed_stages };
       } else {
         merged.push({
@@ -97,11 +96,11 @@ export default function App() {
   useEffect(() => {
     fetchInitialData();
 
-    // Subscribe to real-time updates
+    // Subscribe to DB updates
     const dbSubscription = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tracking_sessions' }, () => {
-        fetchSessionsData();
+        fetchBusesData();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stages' }, () => {
         fetchStagesData();
@@ -120,19 +119,32 @@ export default function App() {
     };
   }, []);
 
-  // Handle GPS watch positioning on tracking state changes
+  // Handle background GPS loop when "Track this Bus" is active
   useEffect(() => {
-    if (trackingSessionId) {
-      localStorage.setItem('transit_tracking_session_id', trackingSessionId);
-      startGpsTracking(trackingSessionId);
+    if (trackingBusId) {
+      localStorage.setItem('transit_tracking_bus_id', trackingBusId);
+      startGpsTracking(trackingBusId);
     } else {
-      localStorage.removeItem('transit_tracking_session_id');
+      localStorage.removeItem('transit_tracking_bus_id');
       if (watchIdRef.current) {
         navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
       }
     }
-  }, [trackingSessionId, sessions, stages]);
+  }, [trackingBusId, buses, stages]);
+
+  useEffect(() => {
+    if (userState) localStorage.setItem('transit_user_state', userState);
+    if (waitingRecordId) localStorage.setItem('transit_waiting_record_id', waitingRecordId);
+    else localStorage.removeItem('transit_waiting_record_id');
+    if (selectedStop) localStorage.setItem('transit_selected_stop', selectedStop);
+  }, [userState, waitingRecordId, selectedStop]);
+
+  useEffect(() => {
+    if (waitingRecordId) {
+      verifyUserWaitingStatus();
+    }
+  }, [waitingRecordId]);
 
   const verifyUserWaitingStatus = async () => {
     const { data, error } = await supabase
@@ -151,7 +163,7 @@ export default function App() {
     setLoading(true);
     await clearOldWaitlistRecords(); // Perform shift-based cleanup
     await Promise.all([
-      fetchSessionsData(),
+      fetchBusesData(),
       fetchStagesData(),
       fetchWaitCounts(),
       fetchAnnouncement()
@@ -199,13 +211,14 @@ export default function App() {
     }
   };
 
-  const fetchSessionsData = async () => {
+  const fetchBusesData = async () => {
     const { data, error } = await supabase
       .from('tracking_sessions')
-      .select('*');
+      .select('*')
+      .order('id', { ascending: true });
     
     if (error) console.error("Error fetching tracking sessions:", error);
-    else setSessions(data || []);
+    else setBuses(data || []);
   };
 
   const fetchStagesData = async () => {
@@ -252,7 +265,7 @@ export default function App() {
 
     if (!navigator.geolocation) {
       alert("Geolocation is not supported by this browser.");
-      setTrackingSessionId(null);
+      setTrackingBusId(null);
       return;
     }
 
@@ -320,7 +333,7 @@ export default function App() {
             navigator.geolocation.clearWatch(watchIdRef.current);
             watchIdRef.current = null;
           }
-          setTrackingSessionId(null);
+          setTrackingBusId(null);
           sendSystemNotification("Arrived!", "🎉 You have arrived at your destination! Tracking has stopped.");
           alert("🎉 You have arrived at your destination! Tracking has stopped.");
         }
@@ -329,9 +342,13 @@ export default function App() {
     }
   };
 
+  // Anti-Spoofing: Bypassed on trust for MVP / Testing purposes
+  const evaluateTrackEligibility = (busId, userLat, userLng) => {
+    return true; 
+  };
+
   // STUDENT ACTIONS
   const handleMarkAsWaiting = async () => {
-    // Request notification permissions directly on student click!
     if ("Notification" in window && Notification.permission === "default") {
       await Notification.requestPermission();
     }
@@ -382,9 +399,8 @@ export default function App() {
     }
   };
 
-  // NEW DYNAMIC SESSIONS CONTROLLER (P2P Activation)
+  // NEW DYNAMIC SESSIONS CONTROLLER (P2P Activation - FIXED state setters)
   const handleStartTrackingSession = async (busType, direction) => {
-    // Request notification permissions directly on click
     if ("Notification" in window && Notification.permission === "default") {
       await Notification.requestPermission();
     }
@@ -406,12 +422,12 @@ export default function App() {
     if (error) {
       console.error("Error starting tracking session:", error);
     } else {
-      setTrackingSessionId(data.id);
+      setTrackingBusId(data.id); // FIXED: Corrected state setter variable name
     }
   };
 
   const handleStopTrackingSession = () => {
-    setTrackingSessionId(null);
+    setTrackingBusId(null); // FIXED: Corrected state setter variable name
   };
 
   const handleToggleFullSession = async () => {
@@ -466,7 +482,7 @@ export default function App() {
   return (
     <div className="min-h-screen max-w-md mx-auto bg-[#F7F7F7] flex flex-col justify-between p-4 shadow-md pb-8">
       
-      {/* Role Toggle Header Indicator (Quietly left for testing manual triggers if ever needed) */}
+      {/* Role Toggle Header Indicator */}
       <div className="text-center mb-3">
         <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500 bg-gray-200/50 px-3 py-1 rounded-full flex items-center justify-center gap-1.5 w-max mx-auto">
           🎓 Passenger Mode
@@ -512,8 +528,8 @@ export default function App() {
             currentBusIndex={currentBusIndex}
             visibleBusesLength={visibleBuses.length}
             setCurrentBusIndex={setCurrentBusIndex}
-            trackingBusId={trackingSessionId}
-            onOpenTrackingModal={() => handleStartTrackingSession("Daystar Bus", "Valley Road ➔ Athi River")} // Defaults to toggle on click
+            trackingBusId={trackingBusId}
+            onOpenTrackingModal={handleStartTrackingSession} // FIXED: Passes correct global function
             handleStopTracking={handleStopTrackingSession}
           />
 
@@ -524,7 +540,7 @@ export default function App() {
             activeDirectionCounts={activeDirectionCounts}
             isCoordinator={false}
             currentBus={currentBus}
-            handleUpdateStage={() => {}} // Direct updates handled strictly by client GPS tracking
+            handleUpdateStage={() => {}}
           />
 
           {/* Bottom Action Area */}
