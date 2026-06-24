@@ -298,7 +298,7 @@ export default function App() {
   };
 
   const evaluateGeofenceArrival = async (sessionId, userLat, userLng) => {
-    const targetSession = sessions.find(s => s.id === sessionId);
+    const targetSession = buses.find(s => s.id === sessionId);
     if (!targetSession) return;
 
     const isReverse = targetSession.direction.startsWith("Athi River");
