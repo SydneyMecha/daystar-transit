@@ -177,13 +177,24 @@ export default function App() {
   const clearOldWaitlistRecords = async () => {
     const now = new Date();
     const currentHour = now.getHours();
-    const todayStr = now.toISOString().split('T')[0];
-
+    
     let cutoffTime = null;
+    
     if (currentHour >= 9 && currentHour < 19) {
-      cutoffTime = `${todayStr}T09:00:00`;
-    } else if (currentHour >= 19 || currentHour < 9) {
-      cutoffTime = `${todayStr}T19:00:00`;
+      // 1. Daytime Shift (9:00 AM to 6:59 PM). Clear anything created before 9:00 AM TODAY.
+      const boundaryDate = new Date();
+      boundaryDate.setHours(9, 0, 0, 0); // 9:00 AM Today
+      cutoffTime = boundaryDate.toISOString();
+    } else {
+      // 2. Nighttime Shift (7:00 PM to 8:59 AM). Clear anything created before 7:00 PM of the shift.
+      const boundaryDate = new Date();
+      if (currentHour < 9) {
+        // If it is currently early morning today (e.g. 4:46 AM),
+        // we want to clear anything created before 7:00 PM YESTERDAY.
+        boundaryDate.setDate(boundaryDate.getDate() - 1);
+      }
+      boundaryDate.setHours(19, 0, 0, 0); // 7:00 PM (Yesterday or Today depending on current hour)
+      cutoffTime = boundaryDate.toISOString();
     }
 
     if (cutoffTime) {
@@ -621,17 +632,33 @@ export default function App() {
             />
           ) : (
             /* ================= PASSENGER SYSTEM VIEW ================= */
-            <HeaderCard 
-              currentBus={currentBus}
-              currentBusIndex={currentBusIndex}
-              visibleBusesLength={visibleBuses.length}
-              setCurrentBusIndex={setCurrentBusIndex}
-              trackingBusId={trackingBusId}
-              handleToggleTracking={setTrackingBusId}
-            />
+            <>
+              {visibleBuses.length === 0 ? (
+                /* PLACE THE BANNER HERE */
+                <div className="bg-red-50 border border-red-200 rounded-2xl p-4 shadow-sm mb-5 text-center">
+                  <svg className="w-8 h-8 text-red-500 mb-2 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <h3 className="font-bold text-red-700 text-sm">No Buses in Transit</h3>
+                  <p className="text-[11px] text-red-400 mt-1 leading-relaxed">
+                    There are currently no active buses reported on the road. Please switch to the <strong>Bus Schedule</strong> tab to check normal departure times.
+                  </p>
+                </div>
+              ) : (
+                /* This renders your active sliding bus card */
+                <HeaderCard 
+                  currentBus={currentBus}
+                  currentBusIndex={currentBusIndex}
+                  visibleBusesLength={visibleBuses.length}
+                  setCurrentBusIndex={setCurrentBusIndex}
+                  trackingBusId={trackingBusId}
+                  handleToggleTracking={setTrackingBusId}
+                />
+              )}
+            </>
           )}
 
-          {/* Dynamic Timeline Section */}
+          {/* Dynamic Timeline Section (Stays visible below the warning!) */}
           <Timeline 
             orderedStagesList={orderedStagesList}
             currentStageIndex={currentStageIndex}

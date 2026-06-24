@@ -70,15 +70,19 @@ export default function ScheduleTab() {
         
         <div className="space-y-3">
           <div className="flex justify-between items-center text-sm border-b border-gray-50 pb-1.5">
-            <span className="text-gray-600">Valley Road ➔ Athi River</span>
+            <span className="text-gray-600">Before Gateway Mall ➔ Athi River</span>
             <span className="font-bold text-gray-800">200 Ksh</span>
           </div>
           <div className="flex justify-between items-center text-sm border-b border-gray-50 pb-1.5">
-            <span className="text-gray-600">Athi ➔ Past Syokimau (to VR)</span>
+            <span className="text-gray-600">From Gateway Mall ➔ Athi River</span>
+            <span className="font-bold text-gray-800">150 Ksh</span>
+          </div>
+          <div className="flex justify-between items-center text-sm border-b border-gray-50 pb-1.5">
+            <span className="text-gray-600">Athi ➔ Past Gateway Mall (to Valley Road)</span>
             <span className="font-bold text-gray-800">200 Ksh</span>
           </div>
           <div className="flex justify-between items-center text-sm pb-1">
-            <span className="text-gray-600">Athi ➔ Syokimau (or before)</span>
+            <span className="text-gray-600">Athi ➔ Gateway Mall (or before)</span>
             <span className="font-bold text-gray-800">150 Ksh</span>
           </div>
         </div>
