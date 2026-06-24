@@ -16,20 +16,14 @@ export default function App() {
   const [waitCounts, setWaitCounts] = useState({});
   const [announcement, setAnnouncement] = useState(null);
   
+  // Real-time On-Screen GPS Staging Debugger
+  const [liveCoords, setLiveCoords] = useState({ lat: null, lng: null, status: "Offline" });
+
   // App Navigation & Roles
   const [activeTab, setActiveTab] = useState("tracker");
   const [isCoordinator, setIsCoordinator] = useState(false);
 
-  // DEVICE-LOCKED SESSION ID: Prevents a single device from leaking multiple cards
-  const [myClientId] = useState(() => {
-    const savedId = localStorage.getItem('transit_client_id');
-    if (savedId && savedId !== 'null') return savedId;
-    const newId = crypto.randomUUID();
-    localStorage.setItem('transit_client_id', newId);
-    return newId;
-  });
-
-  // Student interaction states
+  // Student interaction states (Safely parsed from LocalStorage strings)
   const [selectedStop, setSelectedStop] = useState(() => {
     const stop = localStorage.getItem('transit_selected_stop');
     return (stop && stop !== 'null' && stop !== 'undefined') ? stop : "Valley Road Campus";
@@ -45,7 +39,7 @@ export default function App() {
     return (id && id !== 'null' && id !== 'undefined') ? id : null;
   });
 
-  // GPS Tracking States (Fully simplified)
+  // GPS Crowdsourced Tracker State (UUID string format)
   const [trackingBusId, setTrackingBusId] = useState(() => {
     const id = localStorage.getItem('transit_tracking_bus_id');
     return (id && id !== 'null' && id !== 'undefined') ? id : null;
@@ -63,7 +57,7 @@ export default function App() {
 
     const merged = [];
     active.forEach(session => {
-      const existing = merged.find(b => b.bus_type === session.bus_type && b.current_stage_id === session.current_stage_id);
+      const existing = merged.find(b => b.bus_type === session.bus_type && Number(b.current_stage_id) === Number(session.current_stage_id));
       
       if (existing) {
         existing.passed_stages = { ...existing.passed_stages, ...session.passed_stages };
@@ -81,17 +75,17 @@ export default function App() {
 
     // SORT CARDS: Closest to Athi River (highest index in route direction) appears first
     return merged.sort((a, b) => {
-      const stageA = stages.find(s => s.id === a.current_stage_id);
-      const stageB = stages.find(s => s.id === b.current_stage_id);
+      const stageA = stages.find(s => Number(s.id) === Number(a.current_stage_id));
+      const stageB = stages.find(s => Number(s.id) === Number(b.current_stage_id));
       if (!stageA || !stageB) return 0;
       
       const isReverseA = a.direction.startsWith("Athi River");
       const orderedA = isReverseA ? [...stages].reverse() : stages;
-      const idxA = orderedA.findIndex(s => s.id === a.current_stage_id);
+      const idxA = orderedA.findIndex(s => Number(s.id) === Number(a.current_stage_id));
 
       const isReverseB = b.direction.startsWith("Athi River");
       const orderedB = isReverseB ? [...stages].reverse() : stages;
-      const idxB = orderedB.findIndex(s => s.id === b.current_stage_id);
+      const idxB = orderedB.findIndex(s => Number(s.id) === Number(b.current_stage_id));
 
       return idxB - idxA; // Closest first
     });
@@ -137,13 +131,12 @@ export default function App() {
     if (trackingBusId) {
       localStorage.setItem('transit_tracking_bus_id', trackingBusId);
       if (trackingBusType) localStorage.setItem('transit_tracking_bus_type', trackingBusType);
-      
-      // Start reliable 10-second pulling loop
       startGpsTrackingInterval();
     } else {
       localStorage.removeItem('transit_tracking_bus_id');
       localStorage.removeItem('transit_tracking_bus_type');
       stopGpsTrackingInterval();
+      setLiveCoords({ lat: null, lng: null, status: "Offline" });
     }
   }, [trackingBusId, trackingBusType, buses, stages]);
 
@@ -276,10 +269,9 @@ export default function App() {
   const startGpsTrackingInterval = () => {
     if (intervalIdRef.current) return;
 
-    // Perform immediate first pull
+    setLiveCoords(prev => ({ ...prev, status: "Initiating lock..." }));
     pullCurrentLocation();
 
-    // Setup loop to query every 10 seconds
     intervalIdRef.current = setInterval(() => {
       pullCurrentLocation();
     }, 10000);
@@ -295,13 +287,22 @@ export default function App() {
   const pullCurrentLocation = () => {
     if (!navigator.geolocation) return;
 
+    // FIX 2: Increased timeout from 5s to 15s to prevent indoor cellular GPS timeouts
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
+        const { latitude, longitude, accuracy } = position.coords;
+        setLiveCoords({ 
+          lat: latitude.toFixed(5), 
+          lng: longitude.toFixed(5), 
+          status: `Active (±${Math.round(accuracy)}m)` 
+        });
         evaluateGeofenceArrival(myClientId, latitude, longitude);
       },
-      (err) => console.error("GPS pulling error:", err),
-      { enableHighAccuracy: true, timeout: 5000 }
+      (err) => {
+        console.error("GPS pulling error:", err);
+        setLiveCoords(prev => ({ ...prev, status: `Error: ${err.message}` }));
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
@@ -327,7 +328,9 @@ export default function App() {
 
     const isReverse = targetSession.direction.startsWith("Athi River");
     const ordered = isReverse ? [...stages].reverse() : stages;
-    const currentIdx = ordered.findIndex(s => s.id === targetSession.current_stage_id);
+    
+    // FIX 1: Wrap id comparisons in Number() to prevent database String-to-Number equality blocks
+    const currentIdx = ordered.findIndex(s => Number(s.id) === Number(targetSession.current_stage_id));
 
     for (let i = currentIdx + 1; i < ordered.length; i++) {
       const stage = ordered[i];
@@ -342,7 +345,7 @@ export default function App() {
         const passedStages = { ...targetSession.passed_stages };
         passedStages[stage.id] = timeString;
 
-        // Push update of our specific device tracking session to database (And touch updated_at to reset stale timer)
+        // Push update of our specific device tracking session to database
         await supabase
           .from('tracking_sessions')
           .update({ 
@@ -353,13 +356,12 @@ export default function App() {
           .eq('id', sessionId);
 
         if (i === ordered.length - 1) {
-          // Clean up loop immediately on arrival
           stopGpsTrackingInterval();
           setTrackingBusId(null);
           setTrackingBusType(null);
           
           sendSystemNotification("Arrived!", "🎉 You have arrived at your destination! Tracking has stopped.");
-          alert("🎉 You have arrived at your destination! Tracking has stopped.");
+          // alert("🎉 You have arrived at your destination! Tracking has stopped.");
         }
         break;
       }
@@ -418,7 +420,7 @@ export default function App() {
     }
   };
 
-  // NEW DYNAMIC SESSIONS CONTROLLER (P2P Activation - Upsert device-locked logic)
+  // NEW DYNAMIC SESSIONS CONTROLLER (P2P Activation)
   const handleStartTrackingSession = async (busType, direction) => {
     if ("Notification" in window && Notification.permission === "default") {
       await Notification.requestPermission();
@@ -426,11 +428,10 @@ export default function App() {
 
     const defaultStageId = direction.startsWith("Valley Road") ? 1 : stages.length;
 
-    // UPSERT: Overwrites our own device's old session to prevent leaks/duplicates!
     const { data, error } = await supabase
       .from('tracking_sessions')
       .upsert([{
-        id: myClientId, // Bound directly to this phone
+        id: myClientId, 
         bus_type: busType,
         direction: direction,
         current_stage_id: defaultStageId,
@@ -450,7 +451,6 @@ export default function App() {
   };
 
   const handleStopTrackingSession = async () => {
-    // Delete this specific device's active row from the DB
     await supabase
       .from('tracking_sessions')
       .delete()
@@ -506,7 +506,7 @@ export default function App() {
   }, [currentBus, stages]);
 
   const orderedStagesList = getOrderedStages();
-  const currentStageIndex = orderedStagesList.findIndex(s => s.id === currentBus?.current_stage_id);
+  const currentStageIndex = orderedStagesList.findIndex(s => Number(s.id) === Number(currentBus?.current_stage_id));
   const activeDirectionCounts = currentBus ? (waitCounts[currentBus.direction] || {}) : waitCounts['Valley Road ➔ Athi River'] || {};
 
   return (
@@ -559,7 +559,7 @@ export default function App() {
             visibleBusesLength={visibleBuses.length}
             setCurrentBusIndex={setCurrentBusIndex}
             trackingBusId={trackingBusId}
-            trackingBusType={trackingBusType} // Passed down to safely toggle on brand match
+            trackingBusType={trackingBusType} 
             onOpenTrackingModal={handleStartTrackingSession} 
             handleStopTracking={handleStopTrackingSession}
           />
@@ -595,6 +595,24 @@ export default function App() {
         /* ==================== TAB 2: STATIC SCHEDULE ==================== */
         <ScheduleTab />
       )}
+
+      {/* Subtle On-Screen GPS Staging Debugger (Visible only during staging runs) */}
+      {trackingBusId && (
+        <div className="mt-4 bg-gray-800 text-white rounded-xl p-3 text-[10px] font-mono text-center opacity-75 shadow-md">
+          🟢 GPS Tracker: {liveCoords.status} <br/>
+          Coords: {liveCoords.lat || "Waiting..."}, {liveCoords.lng || "Waiting..."}
+        </div>
+      )}
+
+      {/* Subtle Role Switch Footer */}
+      <div className="text-center mt-6">
+        <button 
+          onClick={() => setIsCoordinator(!isCoordinator)}
+          className="text-xs text-gray-400 underline hover:text-gray-600 transition font-semibold"
+        >
+          {isCoordinator ? "Exit Coordinator Panel" : "Switch to Coordinator Portal"}
+        </button>
+      </div>
     </div>
   );
 }
