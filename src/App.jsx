@@ -32,10 +32,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("tracker");
   const [isCoordinator, setIsCoordinator] = useState(false);
 
-  // DEVICE-LOCKED SESSION ID (With strict self-healing structure to wipe corrupted history)
+  // DEVICE-LOCKED SESSION ID (Self-healing UUID)
   const [myClientId] = useState(() => {
     const savedId = localStorage.getItem('transit_client_id');
-    // STRICT VALIDATION: Must exist, must not be null/undefined, and must be exactly 36 characters (UUID standard)
     if (savedId && savedId !== 'null' && savedId !== 'undefined' && savedId.length === 36) {
       return savedId;
     }
@@ -322,7 +321,7 @@ export default function App() {
         console.error("GPS pulling error:", err);
         setLiveCoords(prev => ({ ...prev, status: `Error: ${err.message}` }));
       },
-      { enableHighAccuracy: true, maximumAge: 0 } // Bypass browser GPS cache for raw, fresh coordinates
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
@@ -342,12 +341,15 @@ export default function App() {
   };
 
   const evaluateGeofenceArrival = async (sessionId, userLat, userLng) => {
+    // Look up our exact physical device row in the active database
     const targetSession = buses.find(s => s.id === sessionId);
     if (!targetSession) return;
 
     const isReverse = targetSession.direction.startsWith("Athi River");
     const ordered = isReverse ? [...stages].reverse() : stages;
-    const currentIdx = ordered.findIndex(s => s.id === targetSession.current_stage_id);
+    
+    // FIX 1: Wrap id comparisons in Number() to prevent database String-to-Number equality blocks
+    const currentIdx = ordered.findIndex(s => Number(s.id) === Number(targetSession.current_stage_id));
 
     for (let i = currentIdx + 1; i < ordered.length; i++) {
       const stage = ordered[i];
@@ -374,6 +376,10 @@ export default function App() {
 
         if (error) {
           console.error("Geofence update error:", error);
+          alert("Geofence DB Error: " + error.message); // VISUAL ERROR NOTIFICATION FOR GROUND TESTING
+        } else {
+          // VISUAL CONFIRMATION NOTIFICATION ON MOBILE SUCCESS
+          alert(`📍 Bus automatically advanced to: ${stage.name}`); 
         }
 
         if (i === ordered.length - 1) {
@@ -382,7 +388,7 @@ export default function App() {
           setTrackingBusType(null);
           
           sendSystemNotification("Arrived!", "🎉 You have arrived at your destination! Tracking has stopped.");
-          // alert("🎉 You have arrived at your destination! Tracking has stopped.");
+          alert("🎉 You have arrived at your destination! Tracking has stopped.");
         }
         break;
       }
@@ -467,8 +473,13 @@ export default function App() {
 
     if (error) {
       console.error("Error starting tracking session:", error);
-      alert("Database Write Error: " + error.message); // VISUAL ALERT POPUP FOR MOBILE DEBUGGING
+      alert("Database Write Error: " + error.message); 
     } else {
+      // OPTIMISTIC UPDATE: Manually update local buses state instantly to prevent find() delays in first GPS loop
+      setBuses(prevBuses => {
+        const filtered = prevBuses.filter(b => b.id !== data.id);
+        return [...filtered, data];
+      });
       setTrackingBusId(data.id); 
       setTrackingBusType(data.bus_type);
     }
