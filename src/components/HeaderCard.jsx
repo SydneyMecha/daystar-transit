@@ -5,7 +5,7 @@ export default function HeaderCard({
   currentBusIndex, 
   visibleBusesLength, 
   setCurrentBusIndex, 
-  trackingBusId, 
+  trackingBusType, // Read from global PWA tracking state
   onOpenTrackingModal,
   handleStopTracking
 }) {
@@ -13,8 +13,8 @@ export default function HeaderCard({
   const [selectedDirection, setSelectedDirection] = useState("Valley Road ➔ Athi River");
   const [selectedType, setSelectedType] = useState("Daystar Bus");
 
-  // Null-safe assignment
-  const isTrackingThisBus = currentBus ? trackingBusId === currentBus.id : false;
+  // CLUSTER-SAFE CHECK: If tracking is active on this device and matches this card's brand
+  const isTrackingThisBus = currentBus && trackingBusType === currentBus.bus_type;
 
   const onTrackToggleClick = () => {
     if (isTrackingThisBus) {
@@ -35,7 +35,7 @@ export default function HeaderCard({
         <>
           <div className="flex items-center justify-center gap-2 text-gray-600 font-medium text-sm mb-3">
             <img src="/logo.png" alt="Transit Logo" className="w-8 h-8 object-contain" />
-            School Bus System
+            Active Transit Bus
           </div>
           
           <div className="flex justify-between items-center px-2">
@@ -74,7 +74,7 @@ export default function HeaderCard({
             {currentBus.bus_type === 'Daystar Bus' ? 'Bus Pass' : 'Cash'}
           </span>
 
-          {/* THE TRACKING CONTROL BUTTON (Now always visible on active cards!) */}
+          {/* THE TRACKING CONTROL BUTTON */}
           <div className="mt-4 pt-3 border-t border-gray-100 flex justify-center">
             <button
               onClick={onTrackToggleClick}
@@ -85,7 +85,7 @@ export default function HeaderCard({
               }`}
             >
               <span className={`w-2 h-2 rounded-full ${isTrackingThisBus ? "bg-red-500 animate-ping" : "bg-sky-500"}`}></span>
-              {isTrackingThisBus ? "Stop Sharing My GPS" : "I'm on board (Share GPS)"}
+              {isTrackingThisBus ? "Stop Sharing My GPS" : "I'm on this bus (Share GPS)"}
             </button>
           </div>
         </>
@@ -127,8 +127,8 @@ export default function HeaderCard({
                   onChange={(e) => setSelectedType(e.target.value)}
                   className="w-full bg-gray-100 border border-gray-200 p-3 rounded-xl outline-none font-semibold text-gray-700 text-xs"
                 >
-                  <option value="Daystar Bus">Daystar Bus (Bus Pass)</option>
-                  <option value="Jambostar Bus">Jambostar Bus (Cash)</option>
+                  <option value="Daystar Bus">Daystar Bus (Official)</option>
+                  <option value="Jambostar Bus">Jambostar Bus (Hired)</option>
                 </select>
               </div>
 

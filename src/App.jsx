@@ -20,7 +20,16 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("tracker");
   const [isCoordinator, setIsCoordinator] = useState(false);
 
-  // Student interaction states (Safely parsed from LocalStorage strings)
+  // DEVICE-LOCKED SESSION ID: Prevents a single device from leaking multiple cards
+  const [myClientId] = useState(() => {
+    const savedId = localStorage.getItem('transit_client_id');
+    if (savedId && savedId !== 'null') return savedId;
+    const newId = crypto.randomUUID();
+    localStorage.setItem('transit_client_id', newId);
+    return newId;
+  });
+
+  // Student interaction states
   const [selectedStop, setSelectedStop] = useState(() => {
     const stop = localStorage.getItem('transit_selected_stop');
     return (stop && stop !== 'null' && stop !== 'undefined') ? stop : "Valley Road Campus";
@@ -36,12 +45,16 @@ export default function App() {
     return (id && id !== 'null' && id !== 'undefined') ? id : null;
   });
 
-  // GPS Crowdsourced Tracker State (UUID string format)
+  // GPS Tracking States (Fully simplified)
   const [trackingBusId, setTrackingBusId] = useState(() => {
     const id = localStorage.getItem('transit_tracking_bus_id');
     return (id && id !== 'null' && id !== 'undefined') ? id : null;
   });
-  const watchIdRef = useRef(null);
+  const [trackingBusType, setTrackingBusType] = useState(() => {
+    return localStorage.getItem('transit_tracking_bus_type') || null;
+  });
+
+  const intervalIdRef = useRef(null);
 
   // CLUSTERING ALGORITHM: Group active student tracking sessions by (bus_type + current_stage_id)
   const getMergedActiveBuses = () => {
@@ -50,11 +63,9 @@ export default function App() {
 
     const merged = [];
     active.forEach(session => {
-      // Find if we already have a bus card of the same brand at the same stage
       const existing = merged.find(b => b.bus_type === session.bus_type && b.current_stage_id === session.current_stage_id);
       
       if (existing) {
-        // Merge the passing timestamps (JSONB maps) so they complete each other
         existing.passed_stages = { ...existing.passed_stages, ...session.passed_stages };
       } else {
         merged.push({
@@ -101,7 +112,6 @@ export default function App() {
     // Subscribe to DB updates
     const dbSubscription = supabase
       .channel('schema-db-changes')
-      // FIX 1: Subscribed to 'tracking_sessions' instead of 'buses' to sync live data!
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tracking_sessions' }, () => {
         fetchBusesData();
       })
@@ -118,23 +128,24 @@ export default function App() {
 
     return () => {
       supabase.removeChannel(dbSubscription);
-      if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
+      stopGpsTrackingInterval();
     };
   }, []);
 
-  // Handle background GPS loop when "Track this Bus" is active
+  // Handle active GPS interval triggers
   useEffect(() => {
     if (trackingBusId) {
       localStorage.setItem('transit_tracking_bus_id', trackingBusId);
-      startGpsTracking(trackingBusId);
+      if (trackingBusType) localStorage.setItem('transit_tracking_bus_type', trackingBusType);
+      
+      // Start reliable 10-second pulling loop
+      startGpsTrackingInterval();
     } else {
       localStorage.removeItem('transit_tracking_bus_id');
-      if (watchIdRef.current) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
-      }
+      localStorage.removeItem('transit_tracking_bus_type');
+      stopGpsTrackingInterval();
     }
-  }, [trackingBusId, buses, stages]);
+  }, [trackingBusId, trackingBusType, buses, stages]);
 
   useEffect(() => {
     if (userState) localStorage.setItem('transit_user_state', userState);
@@ -261,50 +272,37 @@ export default function App() {
     }
   };
 
-  // AUTOMATED GPS TRACKING & GEOFENCING
-  const startGpsTracking = (sessionId) => {
-    if (watchIdRef.current) return;
+  // RELIABLE 10-SECOND GPS PULLING LOOP
+  const startGpsTrackingInterval = () => {
+    if (intervalIdRef.current) return;
 
-    if (!navigator.geolocation) {
-      alert("Geolocation is not supported by this browser.");
-      setTrackingBusId(null);
-      return;
+    // Perform immediate first pull
+    pullCurrentLocation();
+
+    // Setup loop to query every 10 seconds
+    intervalIdRef.current = setInterval(() => {
+      pullCurrentLocation();
+    }, 10000);
+  };
+
+  const stopGpsTrackingInterval = () => {
+    if (intervalIdRef.current) {
+      clearInterval(intervalIdRef.current);
+      intervalIdRef.current = null;
     }
+  };
+
+  const pullCurrentLocation = () => {
+    if (!navigator.geolocation) return;
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
-        
-        // 1. Evaluate distance verification (Bypassed on trust)
-        const isEligible = evaluateTrackEligibility(sessionId, latitude, longitude);
-        if (!isEligible) {
-          setTrackingBusId(null);
-          return;
-        }
-
-        // 2. Start watching position if eligible
-        watchIdRef.current = navigator.geolocation.watchPosition(
-          (pos) => {
-            const { latitude: lat, longitude: lng } = pos.coords;
-            evaluateGeofenceArrival(sessionId, lat, lng);
-          },
-          (err) => {
-            console.error("Tracking watch error:", err);
-            sendSystemNotification("Transit Tracker Error", "Location tracking lost. Please keep your browser open.");
-          },
-          { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
-        );
+        evaluateGeofenceArrival(myClientId, latitude, longitude);
       },
-      (err) => {
-        alert("Permission Denied: Please enable Location Permissions in your phone settings to track this bus.");
-        setTrackingBusId(null);
-      }
+      (err) => console.error("GPS pulling error:", err),
+      { enableHighAccuracy: true, timeout: 5000 }
     );
-  };
-
-  // Anti-Spoofing: Bypassed on trust for MVP / Testing purposes
-  const evaluateTrackEligibility = (busId, userLat, userLng) => {
-    return true; 
   };
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -323,7 +321,7 @@ export default function App() {
   };
 
   const evaluateGeofenceArrival = async (sessionId, userLat, userLng) => {
-    // FIX 2: Swapped lookup from 'sessions' to 'buses' state variable so find returns the correct data!
+    // Look up our exact physical device row in the active database
     const targetSession = buses.find(s => s.id === sessionId);
     if (!targetSession) return;
 
@@ -344,7 +342,7 @@ export default function App() {
         const passedStages = { ...targetSession.passed_stages };
         passedStages[stage.id] = timeString;
 
-        // Push update of student's active tracking session to database
+        // Push update of our specific device tracking session to database (And touch updated_at to reset stale timer)
         await supabase
           .from('tracking_sessions')
           .update({ 
@@ -355,11 +353,11 @@ export default function App() {
           .eq('id', sessionId);
 
         if (i === ordered.length - 1) {
-          if (watchIdRef.current) {
-            navigator.geolocation.clearWatch(watchIdRef.current);
-            watchIdRef.current = null;
-          }
+          // Clean up loop immediately on arrival
+          stopGpsTrackingInterval();
           setTrackingBusId(null);
+          setTrackingBusType(null);
+          
           sendSystemNotification("Arrived!", "🎉 You have arrived at your destination! Tracking has stopped.");
           alert("🎉 You have arrived at your destination! Tracking has stopped.");
         }
@@ -420,7 +418,7 @@ export default function App() {
     }
   };
 
-  // NEW DYNAMIC SESSIONS CONTROLLER (P2P Activation)
+  // NEW DYNAMIC SESSIONS CONTROLLER (P2P Activation - Upsert device-locked logic)
   const handleStartTrackingSession = async (busType, direction) => {
     if ("Notification" in window && Notification.permission === "default") {
       await Notification.requestPermission();
@@ -428,14 +426,17 @@ export default function App() {
 
     const defaultStageId = direction.startsWith("Valley Road") ? 1 : stages.length;
 
+    // UPSERT: Overwrites our own device's old session to prevent leaks/duplicates!
     const { data, error } = await supabase
       .from('tracking_sessions')
-      .insert([{
+      .upsert([{
+        id: myClientId, // Bound directly to this phone
         bus_type: busType,
         direction: direction,
         current_stage_id: defaultStageId,
         passed_stages: {},
-        is_full: false
+        is_full: false,
+        updated_at: new Date().toISOString()
       }])
       .select()
       .single();
@@ -444,11 +445,19 @@ export default function App() {
       console.error("Error starting tracking session:", error);
     } else {
       setTrackingBusId(data.id); 
+      setTrackingBusType(data.bus_type);
     }
   };
 
-  const handleStopTrackingSession = () => {
+  const handleStopTrackingSession = async () => {
+    // Delete this specific device's active row from the DB
+    await supabase
+      .from('tracking_sessions')
+      .delete()
+      .eq('id', myClientId);
+
     setTrackingBusId(null); 
+    setTrackingBusType(null);
   };
 
   const handleToggleFullSession = async () => {
@@ -550,6 +559,7 @@ export default function App() {
             visibleBusesLength={visibleBuses.length}
             setCurrentBusIndex={setCurrentBusIndex}
             trackingBusId={trackingBusId}
+            trackingBusType={trackingBusType} // Passed down to safely toggle on brand match
             onOpenTrackingModal={handleStartTrackingSession} 
             handleStopTracking={handleStopTrackingSession}
           />
