@@ -72,8 +72,11 @@ export default function App() {
 
   // CLUSTERING ALGORITHM: Group active student tracking sessions by (bus_type + current_stage_id)
   const getMergedActiveBuses = () => {
-    const nowStr = new Date(Date.now() - 120000).toISOString(); // 2 minutes stale timeout
-    const active = buses.filter(s => s.updated_at >= nowStr);
+    const twoMinutesAgo = Date.now() - 120000; // 2 minutes stale timeout
+    const active = buses.filter(s => {
+      const lastUpdatedMs = new Date(s.updated_at).getTime();
+      return lastUpdatedMs >= twoMinutesAgo;
+    });
 
     const merged = [];
     active.forEach(session => {
@@ -81,14 +84,16 @@ export default function App() {
       
       if (existing) {
         existing.passed_stages = { ...existing.passed_stages, ...session.passed_stages };
+        existing.tracker_count += 1;
       } else {
         merged.push({
-          id: session.id, // Primary session ID
+          id: session.id, 
           bus_type: session.bus_type,
           direction: session.direction,
           current_stage_id: session.current_stage_id,
           passed_stages: session.passed_stages,
-          is_full: session.is_full
+          is_full: session.is_full,
+          tracker_count: 1
         });
       }
     });
@@ -110,7 +115,6 @@ export default function App() {
       return idxB - idxA; // Closest first
     });
   };
-
   const visibleBuses = getMergedActiveBuses();
   const currentBus = visibleBuses[currentBusIndex] || null;
 
@@ -348,7 +352,6 @@ export default function App() {
     const isReverse = targetSession.direction.startsWith("Athi River");
     const ordered = isReverse ? [...stages].reverse() : stages;
     
-    // FIX 1: Wrap id comparisons in Number() to prevent database String-to-Number equality blocks
     const currentIdx = ordered.findIndex(s => Number(s.id) === Number(targetSession.current_stage_id));
 
     for (let i = currentIdx + 1; i < ordered.length; i++) {
@@ -603,9 +606,8 @@ export default function App() {
             onOpenTrackingModal={handleStartTrackingSession} 
             handleStopTracking={handleStopTrackingSession}
             onOpenWhatsAppModal={() => {
-              // Defaults to active bus current stage, or Valley Road if none live
-              const defaultStageName = currentBus ? (stages[currentStageIndex]?.name) : stages[0]?.name;
-              setWhatsAppStageSelection(defaultStageName || "Valley Road Campus");
+              const currentStageName = stages.find(s => Number(s.id) === Number(currentBus?.current_stage_id))?.name || "Valley Road Campus";
+              setWhatsAppStageSelection(currentStageName);
               setShowWhatsAppModal(true);
             }}
           />
