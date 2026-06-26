@@ -160,8 +160,8 @@ export default function HeaderCard({
                   onChange={(e) => setSelectedType(e.target.value)}
                   className="w-full bg-gray-100 border border-gray-200 p-3 rounded-xl outline-none font-semibold text-gray-700 text-xs"
                 >
-                  <option value="Daystar Bus">Daystar Bus (Official)</option>
-                  <option value="Jambostar Bus">Jambostar Bus (Hired)</option>
+                  <option value="Daystar Bus">Daystar Bus (Bus Pass)</option>
+                  <option value="Jambostar Bus">Jambostar Bus (Cash)</option>
                 </select>
               </div>
 
