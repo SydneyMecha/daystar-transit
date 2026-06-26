@@ -90,6 +90,15 @@ export default function ScheduleTab() {
         <div className="mt-4 bg-blue-50 border border-blue-100 p-3 rounded-xl text-xs text-blue-800 leading-relaxed">
           <strong>📢 Bus Pass Validity:</strong> Bus Passes are strictly valid **ONLY** on the <strong>6:30 a.m.</strong> bus departing from Valley Road and the <strong>5:00 p.m.</strong> bus departing from Athi River.
         </div>
+
+        <div className="mt-4 bg-emerald-50 border border-emerald-100 p-3 rounded-xl text-xs text-emerald-800 leading-relaxed flex items-start gap-2">
+          <svg className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+          <div>
+            <strong>Join the WhatsApp Group:</strong> Stay updated with instant fleet announcements. Click here to join the official Daystar Transport Community: <a href="https://chat.whatsapp.com/C7CL8MBRmro5w4r5mAdJJJ" target="_blank" rel="noopener noreferrer" className="font-bold underline hover:text-emerald-950 transition">Join Group</a>
+          </div>
+        </div>
       </div>
     </div>
   );
