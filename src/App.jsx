@@ -592,6 +592,7 @@ export default function App() {
       {activeTab === "tracker" ? (
         /* ==================== TAB 1: LIVE TRACKER ==================== */
         <>
+          {/* Renders the Unified HeaderCard (with both GPS and WhatsApp buttons on fallback) */}
           <HeaderCard 
             currentBus={currentBus}
             currentBusIndex={currentBusIndex}
@@ -601,6 +602,12 @@ export default function App() {
             trackingBusType={trackingBusType} 
             onOpenTrackingModal={handleStartTrackingSession} 
             handleStopTracking={handleStopTrackingSession}
+            onOpenWhatsAppModal={() => {
+              // Defaults to active bus current stage, or Valley Road if none live
+              const defaultStageName = currentBus ? (stages[currentStageIndex]?.name) : stages[0]?.name;
+              setWhatsAppStageSelection(defaultStageName || "Valley Road Campus");
+              setShowWhatsAppModal(true);
+            }}
           />
 
           {/* Dynamic Timeline Section */}
@@ -642,16 +649,6 @@ export default function App() {
           Coords: {liveCoords.lat || "Waiting..."}, {liveCoords.lng || "Waiting..."}
         </div>
       )}
-
-      {/* Subtle Role Switch Footer */}
-      <div className="text-center mt-6">
-        <button 
-          onClick={() => setIsCoordinator(!isCoordinator)}
-          className="text-xs text-gray-400 underline hover:text-gray-600 transition font-semibold"
-        >
-          {isCoordinator ? "Exit Coordinator Panel" : "Switch to Coordinator Portal"}
-        </button>
-      </div>
     </div>
   );
 }

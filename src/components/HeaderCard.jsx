@@ -5,16 +5,16 @@ export default function HeaderCard({
   currentBusIndex, 
   visibleBusesLength, 
   setCurrentBusIndex, 
-  trackingBusType, // Read from global PWA tracking state
+  trackingBusId, 
   onOpenTrackingModal,
-  handleStopTracking
+  handleStopTracking,
+  onOpenWhatsAppModal
 }) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedDirection, setSelectedDirection] = useState("Valley Road ➔ Athi River");
   const [selectedType, setSelectedType] = useState("Daystar Bus");
 
-  // CLUSTER-SAFE CHECK: If tracking is active on this device and matches this card's brand
-  const isTrackingThisBus = currentBus && trackingBusType === currentBus.bus_type;
+  const isTrackingThisBus = currentBus ? trackingBusId === currentBus.id : false;
 
   const onTrackToggleClick = () => {
     if (isTrackingThisBus) {
@@ -35,7 +35,7 @@ export default function HeaderCard({
         <>
           <div className="flex items-center justify-center gap-2 text-gray-600 font-medium text-sm mb-3">
             <img src="/logo.png" alt="Transit Logo" className="w-8 h-8 object-contain" />
-            Active Transit Bus
+            School Bus System
           </div>
           
           <div className="flex justify-between items-center px-2">
@@ -51,8 +51,10 @@ export default function HeaderCard({
 
             <div className="text-center">
               <div className="font-bold text-gray-800 text-lg">{currentBus.bus_type}</div>
-              <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400 mt-0.5">
-                Bus {currentBusIndex + 1} of {visibleBusesLength}
+              
+              <div className="text-[10px] font-bold text-emerald-600 flex items-center justify-center gap-1 mt-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                {currentBus.tracker_count} student{currentBus.tracker_count > 1 ? 's' : ''} tracking
               </div>
             </div>
 
@@ -74,11 +76,11 @@ export default function HeaderCard({
             {currentBus.bus_type === 'Daystar Bus' ? 'Bus Pass' : 'Cash'}
           </span>
 
-          {/* THE TRACKING CONTROL BUTTON */}
-          <div className="mt-4 pt-3 border-t border-gray-100 flex justify-center">
+          {/* DUAL ACTION BUTTON PANEL */}
+          <div className="mt-4 pt-3 border-t border-gray-100 flex flex-col gap-2.5">
             <button
               onClick={onTrackToggleClick}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 ${
+              className={`w-full py-2.5 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
                 isTrackingThisBus
                   ? "bg-red-100 text-red-600 border border-red-200 animate-pulse"
                   : "bg-sky-100 text-sky-600 border border-sky-200 hover:bg-sky-200"
@@ -87,25 +89,55 @@ export default function HeaderCard({
               <span className={`w-2 h-2 rounded-full ${isTrackingThisBus ? "bg-red-500 animate-ping" : "bg-sky-500"}`}></span>
               {isTrackingThisBus ? "Stop Sharing My GPS" : "I'm on this bus (Share GPS)"}
             </button>
+
+            {!isTrackingThisBus && (
+              <button
+                onClick={onOpenWhatsAppModal}
+                className="w-full py-2.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+              >
+                <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.042-4.03-3.582 8-9-8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                Ask a Passenger to Track (WhatsApp)
+              </button>
+            )}
           </div>
         </>
       ) : (
-        /* FALLBACK CARD IF NO BUSES ARE ONLINE */
-        <div className="text-center py-2">
-          <svg className="w-12 h-12 text-gray-300 mb-3 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        /* FALLBACK CARD IF NO BUSES ARE ONLINE (Contains both blue GPS and green WhatsApp buttons!) */
+        <div className="text-center py-2 flex flex-col gap-3.5">
+          <svg className="w-12 h-12 text-gray-300 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 16c0 1.105-1.343 2-3 2H8c-1.657 0-3-.895-3-2V8c0-1.105 1.343-2 3-2h8c1.657 0 3 .895 3 2v8z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M5 10h14M7 14h2m6 0h2M9 18a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0z" />
           </svg>
-          <h3 className="font-bold text-gray-700 text-sm">No Active Buses in Transit</h3>
-          <p className="text-[11px] text-gray-400 mt-1 max-w-[240px] mx-auto leading-relaxed">
-            Are you currently riding? Click below to start the tracking session.
-          </p>
-          <button 
-            onClick={onTrackToggleClick}
-            className="mt-4 px-5 py-2 bg-sky-100 text-sky-600 hover:bg-sky-200 text-xs font-bold rounded-full transition"
-          >
-            I'm on board (Share GPS)
-          </button>
+          
+          <div>
+            <h3 className="font-bold text-gray-700 text-sm">No Active Buses in Transit</h3>
+            <p className="text-[11px] text-gray-400 mt-1 max-w-[240px] mx-auto leading-relaxed">
+              Are you currently riding? Help us track it by clicking the button below.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2.5 w-full">
+            {/* Primary tracking activation */}
+            <button 
+              onClick={onTrackToggleClick}
+              className="w-full py-3.5 bg-[#38BDF8] hover:bg-[#0EA5E9] text-white text-xs font-bold rounded-2xl shadow-md transition active:scale-[0.98]"
+            >
+              I'm on board (Share GPS)
+            </button>
+
+            {/* Staging WhatsApp plea loop */}
+            <button
+              onClick={onOpenWhatsAppModal}
+              className="w-full py-3.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-[0.98]"
+            >
+              <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.042-4.03-3.582 8-9-8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              Ask a Rider to Track (WhatsApp)
+            </button>
+          </div>
         </div>
       )}
 
@@ -127,8 +159,8 @@ export default function HeaderCard({
                   onChange={(e) => setSelectedType(e.target.value)}
                   className="w-full bg-gray-100 border border-gray-200 p-3 rounded-xl outline-none font-semibold text-gray-700 text-xs"
                 >
-                  <option value="Daystar Bus">Daystar Bus (Bus Pass)</option>
-                  <option value="Jambostar Bus">Jambostar Bus (Cash)</option>
+                  <option value="Daystar Bus">Daystar Bus (Official)</option>
+                  <option value="Jambostar Bus">Jambostar Bus (Hired)</option>
                 </select>
               </div>
 
@@ -153,7 +185,10 @@ export default function HeaderCard({
                 No, Cancel
               </button>
               <button 
-                onClick={confirmTracking}
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  onOpenTrackingModal(selectedType, selectedDirection);
+                }}
                 className="flex-1 py-2.5 bg-[#38BDF8] hover:bg-[#0EA5E9] text-white font-bold rounded-xl text-xs"
               >
                 Yes, Start GPS
