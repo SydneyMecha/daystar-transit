@@ -674,7 +674,6 @@ export default function App() {
             
             {/* Header Icon & Text */}
             <div className="text-center">
-              <div className="text-4xl mb-2">💬</div>
               <h4 className="font-bold text-gray-800 text-base mb-1">Set Your Location</h4>
               <p className="text-xs text-gray-400 leading-relaxed max-w-[280px] mx-auto">
                 Select or type where you are waiting so riders on board know who is asking for GPS tracking.
