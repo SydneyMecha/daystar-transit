@@ -24,6 +24,7 @@ export default function App() {
   const [stages, setStages] = useState([]);
   const [waitCounts, setWaitCounts] = useState({});
   const [announcement, setAnnouncement] = useState(null);
+  const [whatsAppBusSelection, setWhatsAppBusSelection] = useState("Daystar Bus");
   
   // Real-time On-Screen GPS Staging Debugger
   const [liveCoords, setLiveCoords] = useState({ lat: null, lng: null, status: "Offline" });
@@ -31,6 +32,11 @@ export default function App() {
   // App Navigation & Roles
   const [activeTab, setActiveTab] = useState("tracker");
   const [isCoordinator, setIsCoordinator] = useState(false);
+
+  // ADDED: Dynamic WhatsApp Modal States (stages dropdown + custom text input)
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [whatsAppStageSelection, setWhatsAppStageSelection] = useState("Valley Road Campus");
+  const [customStageText, setCustomStageText] = useState("");
 
   // DEVICE-LOCKED SESSION ID (Self-healing UUID)
   const [myClientId] = useState(() => {
@@ -72,11 +78,8 @@ export default function App() {
 
   // CLUSTERING ALGORITHM: Group active student tracking sessions by (bus_type + current_stage_id)
   const getMergedActiveBuses = () => {
-    const twoMinutesAgo = Date.now() - 120000; // 2 minutes stale timeout
-    const active = buses.filter(s => {
-      const lastUpdatedMs = new Date(s.updated_at).getTime();
-      return lastUpdatedMs >= twoMinutesAgo;
-    });
+    const nowStr = new Date(Date.now() - 120000).toISOString(); // 2 minutes stale timeout
+    const active = buses.filter(s => s.updated_at >= nowStr);
 
     const merged = [];
     active.forEach(session => {
@@ -84,16 +87,16 @@ export default function App() {
       
       if (existing) {
         existing.passed_stages = { ...existing.passed_stages, ...session.passed_stages };
-        existing.tracker_count += 1;
+        existing.tracker_count += 1; // Increment tracker count inside this cluster
       } else {
         merged.push({
-          id: session.id, 
+          id: session.id, // Primary session ID
           bus_type: session.bus_type,
           direction: session.direction,
           current_stage_id: session.current_stage_id,
           passed_stages: session.passed_stages,
           is_full: session.is_full,
-          tracker_count: 1
+          tracker_count: 1 // Initiate tracker count
         });
       }
     });
@@ -115,6 +118,7 @@ export default function App() {
       return idxB - idxA; // Closest first
     });
   };
+
   const visibleBuses = getMergedActiveBuses();
   const currentBus = visibleBuses[currentBusIndex] || null;
 
@@ -345,13 +349,13 @@ export default function App() {
   };
 
   const evaluateGeofenceArrival = async (sessionId, userLat, userLng) => {
-    // Look up our exact physical device row in the active database
     const targetSession = buses.find(s => s.id === sessionId);
     if (!targetSession) return;
 
     const isReverse = targetSession.direction.startsWith("Athi River");
     const ordered = isReverse ? [...stages].reverse() : stages;
     
+    // Wrap id comparisons in Number() to prevent database String-to-Number equality blocks
     const currentIdx = ordered.findIndex(s => Number(s.id) === Number(targetSession.current_stage_id));
 
     for (let i = currentIdx + 1; i < ordered.length; i++) {
@@ -379,9 +383,8 @@ export default function App() {
 
         if (error) {
           console.error("Geofence update error:", error);
-          alert("Geofence DB Error: " + error.message); // VISUAL ERROR NOTIFICATION FOR GROUND TESTING
+          alert("Geofence DB Error: " + error.message); 
         } else {
-          // VISUAL CONFIRMATION NOTIFICATION ON MOBILE SUCCESS
           alert(`📍 Bus automatically advanced to: ${stage.name}`); 
         }
 
@@ -478,7 +481,7 @@ export default function App() {
       console.error("Error starting tracking session:", error);
       alert("Database Write Error: " + error.message); 
     } else {
-      // OPTIMISTIC UPDATE: Manually update local buses state instantly to prevent find() delays in first GPS loop
+      // OPTIMISTIC UPDATE: Update buses locally for immediate modal/GPS startup sync
       setBuses(prevBuses => {
         const filtered = prevBuses.filter(b => b.id !== data.id);
         return [...filtered, data];
@@ -510,6 +513,18 @@ export default function App() {
       .eq('id', currentBus.id);
 
     if (error) console.error("Error toggling capacity status:", error);
+  };
+
+  const handleShareToWhatsApp = () => {
+    const finalStage = customStageText.trim() ? customStageText.trim() : whatsAppStageSelection;
+    const appUrl = window.location.origin;
+    const busBrand = whatsAppBusSelection;
+
+    const curatedText = `I’m currently waiting at *${finalStage}*.\n\nIf anyone is on the *${busBrand}*, please open this link and click 'Share GPS' so we know how close you are! 🙏\n\nLink: ${appUrl}`;
+    
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(curatedText)}`, '_blank');
+    setShowWhatsAppModal(false);
+    setCustomStageText(""); // Reset text field on success
   };
 
   const handleClearWaitlistManual = async () => {
@@ -552,7 +567,7 @@ export default function App() {
   const activeDirectionCounts = currentBus ? (waitCounts[currentBus.direction] || {}) : waitCounts['Valley Road ➔ Athi River'] || {};
 
   return (
-    <div className="min-h-screen max-w-md mx-auto bg-[#F7F7F7] flex flex-col justify-between p-4 shadow-md pb-8">
+    <div className="min-h-screen max-w-md mx-auto bg-[#F7F7F7] flex flex-col justify-between p-4 shadow-md pb-8 relative">
       
       {/* Role Toggle Header Indicator */}
       <div className="text-center mb-3">
@@ -595,7 +610,6 @@ export default function App() {
       {activeTab === "tracker" ? (
         /* ==================== TAB 1: LIVE TRACKER ==================== */
         <>
-          {/* Renders the Unified HeaderCard (with both GPS and WhatsApp buttons on fallback) */}
           <HeaderCard 
             currentBus={currentBus}
             currentBusIndex={currentBusIndex}
@@ -605,9 +619,10 @@ export default function App() {
             trackingBusType={trackingBusType} 
             onOpenTrackingModal={handleStartTrackingSession} 
             handleStopTracking={handleStopTrackingSession}
+            // FIXED PROP: Linked the state trigger callback for the custom WhatsApp modal
             onOpenWhatsAppModal={() => {
-              const currentStageName = stages.find(s => Number(s.id) === Number(currentBus?.current_stage_id))?.name || "Valley Road Campus";
-              setWhatsAppStageSelection(currentStageName);
+              const defaultStageName = currentBus ? (stages.find(s => Number(s.id) === Number(currentBus?.current_stage_id))?.name) : stages[0]?.name;
+              setWhatsAppStageSelection(defaultStageName || "Valley Road Campus");
               setShowWhatsAppModal(true);
             }}
           />
@@ -649,6 +664,84 @@ export default function App() {
         <div className="mt-4 bg-gray-800 text-white rounded-xl p-3 text-[10px] font-mono text-center opacity-75 shadow-md">
           🟢 GPS Tracker: {liveCoords.status} <br/>
           Coords: {liveCoords.lat || "Waiting..."}, {liveCoords.lng || "Waiting..."}
+        </div>
+      )}
+
+      {/* DYNAMIC WHATSAPP STAGE SELECTOR MODAL OVERLAY */}
+      {showWhatsAppModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-xl border border-gray-100 flex flex-col gap-4">
+            
+            {/* Header Icon & Text */}
+            <div className="text-center">
+              <div className="text-4xl mb-2">💬</div>
+              <h4 className="font-bold text-gray-800 text-base mb-1">Set Your Location</h4>
+              <p className="text-xs text-gray-400 leading-relaxed max-w-[280px] mx-auto">
+                Select or type where you are waiting so riders on board know who is asking for GPS tracking.
+              </p>
+            </div>
+            
+            {/* Unified Input Fields Container */}
+            <div className="flex flex-col gap-4 text-left my-2">
+              {/* Question 1: Select Stage */}
+              <div>
+                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400 block mb-1.5">Select Stage</label>
+                <select 
+                  value={whatsAppStageSelection} 
+                  onChange={(e) => setWhatsAppStageSelection(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 p-3.5 rounded-2xl outline-none font-bold text-gray-700 text-xs cursor-pointer focus:border-sky-400 focus:bg-white transition-all"
+                >
+                  {stages.map(s => (
+                    <option key={s.id} value={s.name}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Question 2: Custom Text Input */}
+              <div>
+                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400 block mb-1.5">Or Type It</label>
+                <input 
+                  type="text" 
+                  value={customStageText}
+                  onChange={(e) => setCustomStageText(e.target.value)}
+                  placeholder="Pickup point"
+                  className="w-full bg-gray-50 border border-gray-200 p-3.5 rounded-2xl outline-none font-semibold text-gray-700 text-xs placeholder-gray-400 focus:border-sky-400 focus:bg-white transition-all"
+                />
+              </div>
+
+              {/* Question 3: Bus Selection */}
+              <div>
+                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400 block mb-1.5">Which Bus are you waiting for?</label>
+                <select 
+                  value={whatsAppBusSelection} 
+                  onChange={(e) => setWhatsAppBusSelection(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 p-3.5 rounded-2xl outline-none font-bold text-gray-700 text-xs cursor-pointer focus:border-sky-400 focus:bg-white transition-all"
+                >
+                  <option value="Daystar Bus">Daystar Bus (Bus Pass)</option>
+                  <option value="Jambostar Bus">Jambostar Bus (Cash)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Bottom Buttons Action Row */}
+            <div className="flex gap-3">
+              <button 
+                onClick={() => { setShowWhatsAppModal(false); setCustomStageText(""); }}
+                className="flex-1 py-3.5 border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold rounded-2xl text-xs transition"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleShareToWhatsApp}
+                className="flex-1 py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-2xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/10 transition active:scale-[0.98]"
+              >
+                <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.042-4.03-3.582 8-9-8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                Share on WhatsApp
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -90,6 +90,7 @@ export default function HeaderCard({
               {isTrackingThisBus ? "Stop Sharing My GPS" : "I'm on this bus (Share GPS)"}
             </button>
 
+            {/* Triggers the dynamic WhatsApp modal in App.jsx */}
             {!isTrackingThisBus && (
               <button
                 onClick={onOpenWhatsAppModal}
@@ -114,7 +115,7 @@ export default function HeaderCard({
           <div>
             <h3 className="font-bold text-gray-700 text-sm">No Active Buses in Transit</h3>
             <p className="text-[11px] text-gray-400 mt-1 max-w-[240px] mx-auto leading-relaxed">
-              Are you currently riding? Help us track it by clicking the button below.
+              Are you currently on the bus? Help us track it by tapping the button below.
             </p>
           </div>
 
@@ -129,7 +130,7 @@ export default function HeaderCard({
 
             {/* Staging WhatsApp plea loop */}
             <button
-              onClick={onOpenWhatsAppModal}
+              onClick={onOpenWhatsAppModal} // 👈 FIXED: Triggers aligned prop name
               className="w-full py-3.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-[0.98]"
             >
               <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -185,10 +186,7 @@ export default function HeaderCard({
                 No, Cancel
               </button>
               <button 
-                onClick={() => {
-                  setShowConfirmModal(false);
-                  onOpenTrackingModal(selectedType, selectedDirection);
-                }}
+                onClick={confirmTracking}
                 className="flex-1 py-2.5 bg-[#38BDF8] hover:bg-[#0EA5E9] text-white font-bold rounded-xl text-xs"
               >
                 Yes, Start GPS
