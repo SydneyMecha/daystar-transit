@@ -130,7 +130,7 @@ export default function HeaderCard({
 
             {/* Staging WhatsApp plea loop */}
             <button
-              onClick={onOpenWhatsAppModal} // 👈 FIXED: Triggers aligned prop name
+              onClick={onOpenWhatsAppModal}
               className="w-full py-3.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-[0.98]"
             >
               <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

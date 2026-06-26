@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 
-// Import Modular Components
 import AnnouncementBanner from './components/AnnouncementBanner';
 import HeaderCard from './components/HeaderCard';
 import Timeline from './components/Timeline';
@@ -33,7 +32,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("tracker");
   const [isCoordinator, setIsCoordinator] = useState(false);
 
-  // ADDED: Dynamic WhatsApp Modal States (stages dropdown + custom text input)
+  // Dynamic WhatsApp Modal States (stages dropdown + custom text input)
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [whatsAppStageSelection, setWhatsAppStageSelection] = useState("Valley Road Campus");
   const [customStageText, setCustomStageText] = useState("");
@@ -87,16 +86,16 @@ export default function App() {
       
       if (existing) {
         existing.passed_stages = { ...existing.passed_stages, ...session.passed_stages };
-        existing.tracker_count += 1; // Increment tracker count inside this cluster
+        existing.tracker_count += 1;
       } else {
         merged.push({
-          id: session.id, // Primary session ID
+          id: session.id,
           bus_type: session.bus_type,
           direction: session.direction,
           current_stage_id: session.current_stage_id,
           passed_stages: session.passed_stages,
           is_full: session.is_full,
-          tracker_count: 1 // Initiate tracker count
+          tracker_count: 1
         });
       }
     });
@@ -115,7 +114,7 @@ export default function App() {
       const orderedB = isReverseB ? [...stages].reverse() : stages;
       const idxB = orderedB.findIndex(s => Number(s.id) === Number(b.current_stage_id));
 
-      return idxB - idxA; // Closest first
+      return idxB - idxA;
     });
   };
 
@@ -196,7 +195,7 @@ export default function App() {
 
   const fetchInitialData = async () => {
     setLoading(true);
-    await clearOldWaitlistRecords(); // Perform shift-based cleanup
+    await clearOldWaitlistRecords();
     await Promise.all([
       fetchBusesData(),
       fetchStagesData(),
@@ -364,7 +363,7 @@ export default function App() {
 
       const distance = calculateDistance(userLat, userLng, stage.latitude, stage.longitude);
 
-      if (distance < 300) { // Within 300 meters
+      if (distance < 300) {
         const now = new Date();
         const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase();
 
@@ -521,10 +520,15 @@ export default function App() {
     const busBrand = whatsAppBusSelection;
 
     const curatedText = `I’m currently waiting at *${finalStage}*.\n\nIf anyone is on the *${busBrand}*, please open this link and click 'Share GPS' so we know how close you are! 🙏\n\nLink: ${appUrl}`;
-    
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(curatedText)}`, '_blank');
+
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      window.location.href = `whatsapp://send?text=${encodeURIComponent(curatedText)}`;
+    } else {
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(curatedText)}`, '_blank');
+    }
+
     setShowWhatsAppModal(false);
-    setCustomStageText(""); // Reset text field on success
+    setCustomStageText("");
   };
 
   const handleClearWaitlistManual = async () => {
@@ -619,7 +623,6 @@ export default function App() {
             trackingBusType={trackingBusType} 
             onOpenTrackingModal={handleStartTrackingSession} 
             handleStopTracking={handleStopTrackingSession}
-            // FIXED PROP: Linked the state trigger callback for the custom WhatsApp modal
             onOpenWhatsAppModal={() => {
               const defaultStageName = currentBus ? (stages.find(s => Number(s.id) === Number(currentBus?.current_stage_id))?.name) : stages[0]?.name;
               setWhatsAppStageSelection(defaultStageName || "Valley Road Campus");
