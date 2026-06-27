@@ -567,7 +567,7 @@ export default function App() {
       
       {/* Role Toggle Header Indicator */}
       <div className="text-center mb-3">
-        <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500 bg-gray-200/50 px-3 py-1 rounded-full flex items-center justify-center gap-1.5 w-max mx-auto">
+        <span className="text-[12px] tracking-wider font-bold text-gray-500 bg-gray-200/50 px-3 py-1 rounded-full flex items-center justify-center gap-1.5 w-max mx-auto">
           🎓 Passenger Mode
         </span>
       </div>
@@ -667,11 +667,9 @@ export default function App() {
               </p>
             </div>
             
-            {/* Unified Input Fields Container */}
             <div className="flex flex-col gap-4 text-left my-2">
-              {/* Question 1: Select Stage */}
               <div>
-                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400 block mb-1.5">Select Stage</label>
+                <label className="text-[12px] font-bold tracking-wider text-gray-400 block mb-1.5">Select your stage</label>
                 <select 
                   value={whatsAppStageSelection} 
                   onChange={(e) => setWhatsAppStageSelection(e.target.value)}
@@ -683,9 +681,8 @@ export default function App() {
                 </select>
               </div>
 
-              {/* Question 2: Custom Text Input */}
               <div>
-                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400 block mb-1.5">Or Type It</label>
+                <label className="text-[12px] font-bold tracking-wider text-gray-400 block mb-1.5">Or type your stage</label>
                 <input 
                   type="text" 
                   value={customStageText}
@@ -695,9 +692,8 @@ export default function App() {
                 />
               </div>
 
-              {/* Question 3: Bus Selection */}
               <div>
-                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400 block mb-1.5">Which Bus are you waiting for?</label>
+                <label className="text-[12px] font-bold tracking-wider text-gray-400 block mb-1.5">Which bus are you waiting for?</label>
                 <select 
                   value={whatsAppBusSelection} 
                   onChange={(e) => setWhatsAppBusSelection(e.target.value)}

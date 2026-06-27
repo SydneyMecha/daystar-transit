@@ -106,15 +106,10 @@ export default function HeaderCard({
         </>
       ) : (
         /* FALLBACK CARD IF NO BUSES ARE ONLINE (Contains both blue GPS and green WhatsApp buttons!) */
-        <div className="text-center py-2 flex flex-col gap-3.5">
-          <svg className="w-12 h-12 text-gray-300 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 16c0 1.105-1.343 2-3 2H8c-1.657 0-3-.895-3-2V8c0-1.105 1.343-2 3-2h8c1.657 0 3 .895 3 2v8z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M5 10h14M7 14h2m6 0h2M9 18a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0z" />
-          </svg>
-          
+        <div className="text-center py-2 flex flex-col gap-3.5">          
           <div>
-            <h3 className="font-bold text-gray-700 text-sm">No Active Buses in Transit</h3>
-            <p className="text-[11px] text-gray-400 mt-1 max-w-[240px] mx-auto leading-relaxed">
+            <h3 className="font-bold text-gray-700 text-sm">No Active Buses (GPS Tracking Offline)</h3>
+            <p className="text-[11px] text-gray-400 mt-3 max-w-60 mx-auto leading-relaxed">
               Are you currently on the bus? Help us track it by tapping the button below.
             </p>
           </div>
@@ -146,7 +141,6 @@ export default function HeaderCard({
       {showConfirmModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-5 max-w-sm w-full text-center shadow-lg">
-            <div className="text-3xl mb-2">🚌</div>
             <h4 className="font-bold text-gray-800 text-base mb-1">Confirm Tracking Status</h4>
             <p className="text-xs text-gray-400 leading-relaxed mb-4">
               Are you physically sitting inside this bus right now? False reports will mislead students waiting at upcoming stages.
@@ -154,7 +148,7 @@ export default function HeaderCard({
             
             <div className="flex flex-col gap-3 mb-5 text-left">
               <div>
-                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400 block mb-1">Which Bus did you board?</label>
+                <label className="text-[12px] font-bold tracking-wider text-gray-400 block mb-1">Which bus did you board?</label>
                 <select 
                   value={selectedType} 
                   onChange={(e) => setSelectedType(e.target.value)}
@@ -166,7 +160,7 @@ export default function HeaderCard({
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400 block mb-1">What is your direction?</label>
+                <label className="text-[12px] font-bold tracking-wider text-gray-400 block mb-1">What is your direction?</label>
                 <select 
                   value={selectedDirection} 
                   onChange={(e) => setSelectedDirection(e.target.value)}
