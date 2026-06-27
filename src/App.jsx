@@ -380,20 +380,12 @@ export default function App() {
           })
           .eq('id', sessionId);
 
-        if (error) {
-          console.error("Geofence update error:", error);
-          alert("Geofence DB Error: " + error.message); 
-        } else {
-          alert(`📍 Bus automatically advanced to: ${stage.name}`); 
-        }
-
         if (i === ordered.length - 1) {
           stopGpsTrackingInterval();
           setTrackingBusId(null);
           setTrackingBusType(null);
           
           sendSystemNotification("Arrived!", "🎉 You have arrived at your destination! Tracking has stopped.");
-          alert("🎉 You have arrived at your destination! Tracking has stopped.");
         }
         break;
       }
