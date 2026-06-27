@@ -4,8 +4,8 @@ export default function HeaderCard({
   currentBus, 
   currentBusIndex, 
   visibleBusesLength, 
-  setCurrentBusIndex, 
-  trackingBusId, 
+  setCurrentBusIndex,
+  trackingBusType,
   onOpenTrackingModal,
   handleStopTracking,
   onOpenWhatsAppModal
@@ -14,7 +14,7 @@ export default function HeaderCard({
   const [selectedDirection, setSelectedDirection] = useState("Valley Road ➔ Athi River");
   const [selectedType, setSelectedType] = useState("Daystar Bus");
 
-  const isTrackingThisBus = currentBus ? trackingBusId === currentBus.id : false;
+  const isTrackingThisBus = currentBus && trackingBusType === currentBus.bus_type;
 
   const onTrackToggleClick = () => {
     if (isTrackingThisBus) {
@@ -87,7 +87,7 @@ export default function HeaderCard({
               }`}
             >
               <span className={`w-2 h-2 rounded-full ${isTrackingThisBus ? "bg-red-500 animate-ping" : "bg-sky-500"}`}></span>
-              {isTrackingThisBus ? "Stop Sharing My GPS" : "I'm on this bus (Share GPS)"}
+              {isTrackingThisBus ? "Stop Sharing My GPS" : "I'm on board (Share GPS)"}
             </button>
 
             {/* Triggers the dynamic WhatsApp modal in App.jsx */}

@@ -654,14 +654,6 @@ export default function App() {
         <ScheduleTab />
       )}
 
-      {/* Subtle On-Screen GPS Staging Debugger */}
-      {trackingBusId && (
-        <div className="mt-4 bg-gray-800 text-white rounded-xl p-3 text-[10px] font-mono text-center opacity-75 shadow-md">
-          🟢 GPS Tracker: {liveCoords.status} <br/>
-          Coords: {liveCoords.lat || "Waiting..."}, {liveCoords.lng || "Waiting..."}
-        </div>
-      )}
-
       {/* DYNAMIC WHATSAPP STAGE SELECTOR MODAL OVERLAY */}
       {showWhatsAppModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
