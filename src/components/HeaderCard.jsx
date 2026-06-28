@@ -54,7 +54,7 @@ export default function HeaderCard({
               
               <div className="text-[10px] font-bold text-emerald-600 flex items-center justify-center gap-1 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                {currentBus.tracker_count} student{currentBus.tracker_count > 1 ? 's' : ''} tracking
+                {currentBus.tracker_count} person{currentBus.tracker_count > 1 ? 's' : ''} tracking
               </div>
             </div>
 

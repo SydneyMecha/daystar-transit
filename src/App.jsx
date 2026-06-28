@@ -7,6 +7,27 @@ import Timeline from './components/Timeline';
 import ActionArea from './components/ActionArea';
 import ScheduleTab from './components/ScheduleTab';
 
+// ============================================
+// ON-DEVICE DEBUG CONSOLE (temporary testing tool)
+// Visible only with ?debug=1 in the URL — never shown to normal users.
+// Remove this whole block once background/notification testing is done.
+// ============================================
+useEffect(() => {
+  const isDebugMode = new URLSearchParams(window.location.search).get('debug') === '1';
+  if (!isDebugMode) return;
+
+  // Avoid loading it twice if this effect re-runs
+  if (window.eruda) return;
+
+  const script = document.createElement('script');
+  script.src = "https://cdn.jsdelivr.net/npm/eruda";
+  script.onload = () => {
+    window.eruda.init();
+    console.log("🐛 Debug console loaded — drag the floating icon to move it.");
+  };
+  document.body.appendChild(script);
+}, []);
+
 // Cross-compatible mobile UUID generator
 const generateSafeUUID = () => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
