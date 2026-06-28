@@ -75,6 +75,14 @@ export default function App() {
 
   const intervalIdRef = useRef(null);
 
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(err =>
+        console.error('SW registration failed:', err)
+      );
+    }
+  }, []);
+
   // ============================================
   // ON-DEVICE DEBUG CONSOLE (temporary testing tool)
   // Visible only with ?debug=1 in the URL — never shown to normal users.
@@ -306,9 +314,9 @@ export default function App() {
   };
 
   // SYSTEM NOTIFICATIONS
-  const sendSystemNotification = (title, body) => {
+  const sendSystemNotification = async (title, body) => {
     if (!("Notification" in window)) {
-      console.warn("Notifications unsupported on this browser (this is normal on iPhone Safari unless the site is added to Home Screen).");
+      console.warn("Notifications unsupported on this browser.");
       return false;
     }
     if (Notification.permission !== "granted") {
@@ -316,8 +324,16 @@ export default function App() {
       return false;
     }
     try {
-      new Notification(title, { body, icon: "/logo.png" });
-      return true;
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(title, { body, icon: "/logo.png" });
+        console.log("✅ Notification shown via service worker");
+        return true;
+      } else {
+        // Fallback for browsers without SW support (rare, mostly older desktop)
+        new Notification(title, { body, icon: "/logo.png" });
+        return true;
+      }
     } catch (err) {
       console.error("Notification failed to fire:", err);
       return false;
@@ -353,22 +369,32 @@ export default function App() {
     releaseWakeLock(); 
   };
 
-  const pullCurrentLocation = () => {
+  const pullCurrentLocation = (isRetry = false) => {
     if (!navigator.geolocation) return;
+    console.log(`📡 Requesting GPS position${isRetry ? ' (retry, relaxed accuracy)' : ''}...`);
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude, accuracy } = position.coords;
-        setLiveCoords({ 
-          lat: latitude.toFixed(5), 
-          lng: longitude.toFixed(5), 
-          status: `Active (±${Math.round(accuracy)}m)` 
-        });
+        console.log(`✅ GPS got: ${latitude.toFixed(5)}, ${longitude.toFixed(5)} (±${Math.round(accuracy)}m)`);
+        setLiveCoords({ lat: latitude.toFixed(5), lng: longitude.toFixed(5), status: `Active (±${Math.round(accuracy)}m)` });
         evaluateGeofenceArrival(myClientId, latitude, longitude);
       },
       (err) => {
         console.error("GPS pulling error:", err);
-        setLiveCoords(prev => ({ ...prev, status: `Error: ${err.message}` }));
+        if (err.code === 3 && !isRetry) {
+          // Timeout — retry once with relaxed settings instead of just giving up
+          navigator.geolocation.getCurrentPosition(
+            (position) => pullCurrentLocation.successHandler?.(position), // see note below
+            (retryErr) => {
+              console.error("GPS retry also failed:", retryErr);
+              setLiveCoords(prev => ({ ...prev, status: `Error: ${retryErr.message}` }));
+            },
+            { enableHighAccuracy: false, timeout: 20000, maximumAge: 30000 }
+          );
+        } else {
+          setLiveCoords(prev => ({ ...prev, status: `Error: ${err.message}` }));
+        }
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
