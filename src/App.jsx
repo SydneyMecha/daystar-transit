@@ -649,31 +649,53 @@ export default function App() {
     }
   };
 
+  const hiddenTimerRef = useRef(null);
+  const wasPausedRef = useRef(false);
+
   // Detect tab-switch / minimize / lock screen, and alert on it
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      const hidden = document.visibilityState === "hidden";
+  const handleVisibilityChange = () => {
+    const hidden = document.visibilityState === "hidden";
+    console.log(`👁️ Visibility changed → ${hidden ? "HIDDEN" : "VISIBLE"} (trackingBusId: ${trackingBusId})`);
 
-      if (!trackingBusId) return; // only matters while actively sharing GPS
+    if (!trackingBusId) return;
 
-      if (hidden) {
+    if (hidden) {
+      // Don't notify immediately — wait to see if they come right back
+      hiddenTimerRef.current = setTimeout(() => {
         setLiveCoords(prev => ({ ...prev, status: "Paused — tab not active" }));
         sendSystemNotification(
           "⚠️ Location sharing paused",
           "You switched away or locked your screen. Reopen this tab to keep sharing your GPS."
         );
         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-      } else {
-        setLiveCoords(prev => ({ ...prev, status: "Resuming..." }));
-        requestWakeLock();
-        pullCurrentLocation(); // re-sync immediately instead of waiting up to 10s
-        sendSystemNotification("📍 You're back", "Location sharing has resumed.");
+        wasPausedRef.current = true;
+      }, 10000); // only fires if still hidden after 10s
+    } else {
+      // Cancel the pending "paused" notification if they came back quickly
+      if (hiddenTimerRef.current) {
+        clearTimeout(hiddenTimerRef.current);
+        hiddenTimerRef.current = null;
       }
-    };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [trackingBusId]);
+      requestWakeLock();
+      pullCurrentLocation();
+
+      // Only send a "you're back" notification if we'd actually told them they were paused
+      if (wasPausedRef.current) {
+        setLiveCoords(prev => ({ ...prev, status: "Resuming..." }));
+        sendSystemNotification("📍 You're back", "Location sharing has resumed.");
+        wasPausedRef.current = false;
+      }
+    }
+  };
+
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+  return () => {
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    if (hiddenTimerRef.current) clearTimeout(hiddenTimerRef.current);
+  };
+}, [trackingBusId]);
 
   return (
     <div className="min-h-screen max-w-md mx-auto bg-[#F7F7F7] flex flex-col justify-between p-4 shadow-md pb-8 relative">
