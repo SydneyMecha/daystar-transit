@@ -77,7 +77,7 @@ export default function App() {
 
   // CLUSTERING ALGORITHM: Group active student tracking sessions by (bus_type + current_stage_id)
   const getMergedActiveBuses = () => {
-    const nowStr = new Date(Date.now() - 120000).toISOString(); // 2 minutes stale timeout
+    const nowStr = new Date(Date.now() - 1200000).toISOString(); // 20 minutes stale timeout
     const active = buses.filter(s => s.updated_at >= nowStr);
 
     const merged = [];
@@ -286,17 +286,37 @@ export default function App() {
 
   // SYSTEM NOTIFICATIONS
   const sendSystemNotification = (title, body) => {
-    if (!("Notification" in window)) return;
-    if (Notification.permission === "granted") {
+    if (!("Notification" in window)) {
+      console.warn("Notifications unsupported on this browser (this is normal on iPhone Safari unless the site is added to Home Screen).");
+      return false;
+    }
+    if (Notification.permission !== "granted") {
+      console.warn(`Notification skipped — permission is "${Notification.permission}".`);
+      return false;
+    }
+    try {
       new Notification(title, { body, icon: "/logo.png" });
+      return true;
+    } catch (err) {
+      console.error("Notification failed to fire:", err);
+      return false;
     }
   };
+
+  // SURFACE NOTIFICATION STATUS
+  const [notificationStatus, setNotificationStatus] = useState("default");
+
+  useEffect(() => {
+    if (!("Notification" in window)) setNotificationStatus("unsupported");
+    else setNotificationStatus(Notification.permission);
+  }, []);
 
   // RELIABLE 10-SECOND GPS PULLING LOOP
   const startGpsTrackingInterval = () => {
     if (intervalIdRef.current) return;
 
     setLiveCoords(prev => ({ ...prev, status: "Initiating lock..." }));
+    requestWakeLock();
     pullCurrentLocation();
 
     intervalIdRef.current = setInterval(() => {
@@ -309,6 +329,7 @@ export default function App() {
       clearInterval(intervalIdRef.current);
       intervalIdRef.current = null;
     }
+    releaseWakeLock(); 
   };
 
   const pullCurrentLocation = () => {
@@ -562,6 +583,51 @@ export default function App() {
   const currentStageIndex = orderedStagesList.findIndex(s => Number(s.id) === Number(currentBus?.current_stage_id));
   const activeDirectionCounts = currentBus ? (waitCounts[currentBus.direction] || {}) : waitCounts['Valley Road ➔ Athi River'] || {};
 
+  // Stop the screen from auto-locking while tracking
+  const wakeLockRef = useRef(null);
+
+  const requestWakeLock = async () => {
+    if (!("wakeLock" in navigator)) return;
+    try {
+      wakeLockRef.current = await navigator.wakeLock.request("screen");
+    } catch (err) {
+      console.warn("Wake Lock request failed:", err.message);
+    }
+  };
+
+  const releaseWakeLock = () => {
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release().catch(() => {});
+      wakeLockRef.current = null;
+    }
+  };
+
+  // Detect tab-switch / minimize / lock screen, and alert on it
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const hidden = document.visibilityState === "hidden";
+
+      if (!trackingBusId) return; // only matters while actively sharing GPS
+
+      if (hidden) {
+        setLiveCoords(prev => ({ ...prev, status: "Paused — tab not active" }));
+        sendSystemNotification(
+          "⚠️ Location sharing paused",
+          "You switched away or locked your screen. Reopen this tab to keep sharing your GPS."
+        );
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      } else {
+        setLiveCoords(prev => ({ ...prev, status: "Resuming..." }));
+        requestWakeLock();
+        pullCurrentLocation(); // re-sync immediately instead of waiting up to 10s
+        sendSystemNotification("📍 You're back", "Location sharing has resumed.");
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [trackingBusId]);
+
   return (
     <div className="min-h-screen max-w-md mx-auto bg-[#F7F7F7] flex flex-col justify-between p-4 shadow-md pb-8 relative">
       
@@ -602,6 +668,15 @@ export default function App() {
 
       {/* DYNAMIC ANNOUNCEMENT BANNER */}
       <AnnouncementBanner announcement={announcement} />
+
+      {/* SURFACE NOTIFICATON STATUS */}
+      {notificationStatus !== "granted" && trackingBusId && (
+        <p className="text-[11px] text-amber-600 text-center mt-1">
+          {notificationStatus === "unsupported"
+            ? "🔕 Alerts aren't supported on this browser — keep this tab open and visible."
+            : "🔕 Notifications are off. Enable them to get arrival/background alerts."}
+        </p>
+      )}
 
       {activeTab === "tracker" ? (
         /* ==================== TAB 1: LIVE TRACKER ==================== */
